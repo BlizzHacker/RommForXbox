@@ -25,7 +25,7 @@ const VERSION = '0.1.0.0';
 const START_PAGE = process.env.ROMM_XBOX_START_PAGE ?? 'https://xbox.moveweight.com/';
 const HOSTS = ['https://xbox.moveweight.com/', 'https://romm.moveweight.com/'];
 const IDENTITY = {
-  name: 'MOVEWEIGHT.RommForXbox',
+  name: 'MOVEWEIGHT.RomMforXbox',
   publisher: 'CN=6375D74B-5E4F-45B4-B246-B29507C1332A',
   publisherDisplayName: 'MOVE WEIGHT',
 };
