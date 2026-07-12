@@ -195,8 +195,26 @@ function ejsCore(slug) {
   return M[slug] || slug;
 }
 
+// EmulatorJS owns the pad during local play, but the Gamepad API is poll-based
+// and non-exclusive: watch for Menu+View held ~1 s to quit back to the library.
+function armLocalQuitWatcher() {
+  let heldSince = 0;
+  const iv = setInterval(() => {
+    if (view !== 'local') { clearInterval(iv); return; }
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const p = [...pads].find(x => x && x.connected);
+    const held = p && p.buttons[8] && p.buttons[9] &&
+                 p.buttons[8].pressed && p.buttons[9].pressed;
+    if (held) {
+      if (!heldSince) heldSince = Date.now();
+      else if (Date.now() - heldSince > 1000) location.reload();
+    } else heldSince = 0;
+  }, 100);
+}
+
 async function startLocal(p, g) {
   show('local');
+  armLocalQuitWatcher();
   const saveUrl = '/api/saves/' + encodeURIComponent(p.slug) + '/' +
                   encodeURIComponent(g.fs_name);
   window.EJS_player = '#game';
