@@ -1,0 +1,59 @@
+/* 10-foot UI for Xbox Edge. Focus ring is the whole navigation model. */
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#0B1020; --panel:#121B33; --line:#334B7A; --fg:#F8FAFC;
+  --dim:#9FB3D9; --accent:#7DD3FC; --good:#4ADE80;
+}
+html,body { background:var(--bg); color:var(--fg);
+  font-family:"Segoe UI",Arial,sans-serif; height:100%; overflow:hidden; }
+.hidden { display:none !important; }
+.dim { color:var(--dim); }
+.right { margin-left:auto; }
+.status { color:var(--dim); min-height:1.4em; }
+
+.view { position:absolute; inset:0; padding:3vh 4vw; }
+
+/* pairing */
+#view-pair { display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:2vh; text-align:center; }
+#view-pair h1 { color:var(--accent); font-size:4vh; }
+#view-pair .hint { max-width:60vw; font-size:2.2vh; color:var(--dim); }
+#pair-code { font-size:6vh; letter-spacing:1.2vh; font-family:Consolas,monospace;
+  background:var(--panel); border:2px solid var(--line); border-radius:1vh;
+  padding:1vh 3vh; min-width:40vh; min-height:9vh; }
+#pair-pad { display:grid; grid-template-columns:repeat(6,9vh); gap:1vh; }
+#pair-pad .key { height:8vh; font-size:3.2vh; background:var(--panel);
+  border:2px solid var(--line); border-radius:1vh; color:var(--fg);
+  display:flex; align-items:center; justify-content:center; }
+
+/* library */
+#view-library { display:flex; flex-direction:column; gap:1.5vh; }
+#view-library header { display:flex; gap:2vw; font-size:2.6vh;
+  align-items:baseline; }
+#lib-title { color:var(--accent); font-weight:bold; }
+#platform-rail { display:flex; gap:1vh; overflow-x:hidden; flex:none; }
+#platform-rail .plat { padding:1vh 2vh; font-size:2.2vh; white-space:nowrap;
+  background:var(--panel); border:2px solid var(--line); border-radius:3vh; }
+#platform-rail .plat.current { border-color:var(--good); color:var(--good); }
+#game-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1.5vh;
+  overflow-y:hidden; flex:1; align-content:start; }
+#game-grid .tile { background:var(--panel); border:3px solid var(--line);
+  border-radius:1vh; overflow:hidden; display:flex; flex-direction:column; }
+#game-grid .tile img { width:100%; aspect-ratio:3/4; object-fit:cover;
+  background:#000; }
+#game-grid .tile .t { font-size:1.7vh; padding:0.8vh; height:5vh;
+  overflow:hidden; }
+#game-grid .tile .badge { position:absolute; }
+
+.focus { border-color:var(--accent) !important;
+  box-shadow:0 0 2vh rgba(125,211,252,.6); transform:scale(1.03); }
+
+/* play views */
+#view-local, #view-stream { padding:0; background:#000; }
+#game { width:100vw; height:100vh; }
+#stream-video { width:100vw; height:100vh; object-fit:contain; background:#000; }
+#stream-overlay { position:absolute; inset:0; display:flex; align-items:center;
+  justify-content:center; background:rgba(11,16,32,.85); font-size:3vh; }
+#quit-hint { position:absolute; top:2vh; right:2vw; font-size:2vh;
+  color:var(--dim); background:rgba(11,16,32,.7); padding:1vh 2vh;
+  border-radius:1vh; }

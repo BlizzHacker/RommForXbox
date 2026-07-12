@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RomM for Xbox</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Pairing -->
+<div id="view-pair" class="view">
+  <h1>RomM for Xbox</h1>
+  <p class="hint">Sign into RomM in a browser → create a Client API Token
+    (read-only <code>platforms.read</code> + <code>roms.read</code>) → choose
+    <b>Pair</b> and enter the eight-digit code below.</p>
+  <div id="pair-code"></div>
+  <div id="pair-pad"></div>
+  <p id="pair-status" class="status"></p>
+  <p class="hint dim">D-pad to move · A to press · B to delete</p>
+</div>
+
+<!-- Library -->
+<div id="view-library" class="view hidden">
+  <header>
+    <span id="lib-title">Library</span>
+    <span id="lib-count" class="dim"></span>
+    <span class="dim right">LB/RB platform · A play · X refresh</span>
+  </header>
+  <nav id="platform-rail"></nav>
+  <main id="game-grid"></main>
+  <p id="lib-status" class="status"></p>
+</div>
+
+<!-- Local play (EmulatorJS) -->
+<div id="view-local" class="view hidden">
+  <div id="game"></div>
+</div>
+
+<!-- Stream play (WebRTC) -->
+<div id="view-stream" class="view hidden">
+  <video id="stream-video" autoplay playsinline></video>
+  <div id="stream-overlay" class="hidden">
+    <p id="stream-msg"></p>
+  </div>
+  <div id="quit-hint" class="hidden">Hold <b>Menu + View</b> to quit</div>
+</div>
+
+<script src="gamepad.js"></script>
+<script src="rtc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
