@@ -40,3 +40,11 @@ backend and full nginx config):
 
 Controller reference: LB/RB switch platform · A play · B back ·
 in-stream hold **Menu + View** 1 s to quit.
+
+## Installable Xbox app (MSIX)
+
+`node scripts/build-msix.mjs` builds `dist/RommForXbox_<ver>_neutral.msix`, a
+hosted web app targeting `Windows.Xbox` whose start page is
+`https://xbox.moveweight.com/`. Sideload it on a Dev Mode console (Device
+Portal > Add), or submit it to the Microsoft Store for retail installs.
+Set `ROMM_XBOX_SIGN_PFX`/`ROMM_XBOX_SIGN_PWD` to sign the output.
