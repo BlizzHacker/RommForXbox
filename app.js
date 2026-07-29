@@ -171,6 +171,14 @@ function setupInput(btn) {
   if (btn === 'up') setupIdx = (setupIdx + items.length - 1) % items.length;
   else if (btn === 'down') setupIdx = (setupIdx + 1) % items.length;
   else if (btn === 'a') return items[setupIdx].go();
+  else if (btn === 'b') {
+    // Settings reached from the library: go back. Otherwise this is the root,
+    // and back should leave the app rather than do nothing.
+    if (CFG.server && CFG.token) return enterLibrary();
+    if (HOST.exit()) return;
+    renderSetup('Press the Xbox button to leave.');
+    return;
+  }
   else return;
   renderSetup();
 }

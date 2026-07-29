@@ -11,6 +11,19 @@
  */
 'use strict';
 
+const HOST = (() => {
+  const wv = window.chrome && window.chrome.webview;
+  return {
+    get present() { return !!wv; },
+    // Ask the shell to close. On console the system back gesture is suppressed
+    // so B behaves as the app intends, which means leaving has to be explicit.
+    exit() {
+      if (!wv) return false;
+      try { wv.postMessage({ t: 'exit' }); return true; } catch (_) { return false; }
+    },
+  };
+})();
+
 (() => {
   const wv = window.chrome && window.chrome.webview;
   if (!wv) return;                      // plain browser — Gamepad API is fine

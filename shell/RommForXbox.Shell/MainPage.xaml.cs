@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Microsoft.Web.WebView2.Core;
 using Windows.ApplicationModel;
+using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 
@@ -32,6 +33,14 @@ namespace RommForXbox.Shell
         {
             InitializeComponent();
             Loaded += OnLoaded;
+
+            // On Xbox the B button raises system back, which would tear the app
+            // down mid-typing — B is backspace in the app's on-screen keyboard.
+            // The page owns B (it is delivered through GamepadBridge like every
+            // other button), so swallow the system gesture and let the page
+            // decide. The page asks to leave explicitly, via {"t":"exit"}.
+            SystemNavigationManager.GetForCurrentView().BackRequested +=
+                (s, e) => e.Handled = true;
         }
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -106,11 +115,20 @@ namespace RommForXbox.Shell
                 return;                     // not JSON; nothing we sent looks like that
             }
 
+            if (json == null) return;
+
             // host-bridge.js posts {"t":"ready"} once it is listening. Pumping
             // before that just drops frames on the floor.
-            if (json != null && json.Contains("\"ready\""))
+            if (json.Contains("\"ready\""))
             {
                 _pads.Start(sender);
+            }
+            else if (json.Contains("\"exit\""))
+            {
+                // The page reached its root and the user pressed back. Leaving
+                // has to be possible without the Guide button.
+                _pads.Stop();
+                Application.Current.Exit();
             }
         }
     }

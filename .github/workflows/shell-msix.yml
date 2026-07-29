@@ -69,6 +69,50 @@ jobs:
           if (-not $pkgs) { Write-Error "no package produced"; exit 1 }
           $pkgs | ForEach-Object { Write-Host ("{0}  {1:N0} bytes" -f $_.FullName, $_.Length) }
 
+      - name: Validate package contents
+        shell: pwsh
+        run: |
+          # A package that builds but ships no web content would install and then
+          # show a blank screen on the console, where it is hardest to diagnose.
+          $sdk = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Directory |
+                 Where-Object { Test-Path (Join-Path $_.FullName 'x64\makeappx.exe') } |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          $makeappx = Join-Path $sdk.FullName 'x64\makeappx.exe'
+          Write-Host "using $makeappx"
+
+          $msix = Get-ChildItem -Recurse -Filter *.msix -Path shell |
+                  Where-Object { $_.FullName -like '*_Test*' } |
+                  Select-Object -First 1
+          if (-not $msix) { Write-Error 'no sideload msix to inspect'; exit 1 }
+
+          $dest = Join-Path $env:RUNNER_TEMP 'unpacked'
+          & $makeappx unpack /p $msix.FullName /d $dest /nv | Out-Null
+          if ($LASTEXITCODE -ne 0) { Write-Error 'unpack failed'; exit 1 }
+
+          Write-Host '--- packaged web content ---'
+          Get-ChildItem (Join-Path $dest 'web') -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host ("  {0}  {1:N0} B" -f $_.Name, $_.Length) }
+
+          $required = @('index.html','style.css','app.js','romm.js','config.js',
+                        'osk.js','gamepad.js','host-bridge.js','rtc.js')
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path $dest "web\$_")) }
+          if ($missing) { Write-Error ("missing from package: " + ($missing -join ', ')); exit 1 }
+
+          [xml]$m = Get-Content (Join-Path $dest 'AppxManifest.xml')
+          $id = $m.Package.Identity
+          Write-Host ("identity: {0} {1} {2}" -f $id.Name, $id.Version, $id.ProcessorArchitecture)
+          Write-Host ("publisher: {0}" -f $id.Publisher)
+          if ($id.Name -ne 'MOVEWEIGHT.RomMforXbox') {
+            Write-Error "identity name drifted from the Partner Center product"; exit 1
+          }
+          if ($id.Publisher -ne 'CN=6375D74B-5E4F-45B4-B246-B29507C1332A') {
+            Write-Error "publisher drifted from the Partner Center product"; exit 1
+          }
+          $fams = $m.Package.Dependencies.TargetDeviceFamily | ForEach-Object { $_.Name }
+          Write-Host ("device families: " + ($fams -join ', '))
+          if ($fams -notcontains 'Windows.Xbox') { Write-Error 'Xbox family missing'; exit 1 }
+          Write-Host 'package validated'
+
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
