@@ -2,9 +2,16 @@
 
 Product: **9MXC51W17LH4** — `https://partner.microsoft.com/dashboard/products/9MXC51W17LH4`
 
-Submit the **shell** package (`shell/**/AppPackages/**/*.msix`, built by the
-`Build Xbox shell MSIX` workflow), **not** the hosted-web-app package in
-`dist/`. The hosted package cannot play from a customer's own server — see
+Upload **`RommForXbox_0.3.0.0_x64_STORE.msixupload`** — in
+`C:\MoveWeight\STORE-SUBMIT\`, and an artifact of the `Build Xbox shell MSIX`
+workflow. `.msixupload` is the format Partner Center wants; it carries the
+framework dependencies with it.
+
+`RommForXbox_0.3.0.0_x64_SIDELOAD.msix` beside it is the Dev Mode build, for
+testing on a console through the Device Portal.
+
+Do **not** submit the older hosted-web-app packages (`RommForXbox_0.1.0.0` or
+`0.2.0.0_neutral.msix`) — they cannot play from a customer's own server. See
 [xbox-store-status.md](xbox-store-status.md).
 
 Identity is fixed and must not drift from the product:
