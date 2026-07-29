@@ -1,4 +1,6 @@
-/* 10-foot UI for Xbox Edge. Focus ring is the whole navigation model. */
+/* 10-foot UI. Focus ring is the whole navigation model — nothing here depends
+ * on a pointer. Padding keeps content inside the TV title-safe area, which Xbox
+ * certification checks for. */
 * { margin:0; padding:0; box-sizing:border-box; }
 :root {
   --bg:#0B1020; --panel:#121B33; --line:#334B7A; --fg:#F8FAFC;
@@ -9,22 +11,56 @@ html,body { background:var(--bg); color:var(--fg);
 .hidden { display:none !important; }
 .dim { color:var(--dim); }
 .right { margin-left:auto; }
-.status { color:var(--dim); min-height:1.4em; }
+.status { color:var(--accent); min-height:1.4em; font-size:2.2vh; }
+.hint { font-size:2.1vh; color:var(--dim); max-width:70vw; }
+.lede { font-size:2.4vh; max-width:70vw; color:var(--fg); }
 
-.view { position:absolute; inset:0; padding:3vh 4vw; }
+.view { position:absolute; inset:0; padding:5vh 5vw; }
+h1 { color:var(--accent); font-size:4.4vh; }
+h2 { color:var(--accent); font-size:3.2vh; }
 
-/* pairing */
-#view-pair { display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:2vh; text-align:center; }
-#view-pair h1 { color:var(--accent); font-size:4vh; }
-#view-pair .hint { max-width:60vw; font-size:2.2vh; color:var(--dim); }
-#pair-code { font-size:6vh; letter-spacing:1.2vh; font-family:Consolas,monospace;
+/* setup / settings */
+#view-setup, #view-auth { display:flex; flex-direction:column; gap:2vh;
+  align-items:flex-start; }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:0.6vh 2vw;
+  font-size:2.2vh; }
+.kv dt { color:var(--dim); }
+.kv dd { font-family:Consolas,monospace; }
+#setup-options { display:flex; flex-direction:column; gap:1.2vh;
+  width:min(70vw,90ch); }
+#setup-options .opt { background:var(--panel); border:3px solid var(--line);
+  border-radius:1vh; padding:1.6vh 2vh; font-size:2.4vh;
+  display:flex; flex-direction:column; gap:0.4vh; }
+#setup-options .opt span { font-size:1.9vh; }
+
+/* auth */
+.tabs { display:flex; gap:1.5vh; }
+.tabs .tab { padding:1vh 2.4vh; font-size:2.2vh; background:var(--panel);
+  border:2px solid var(--line); border-radius:3vh; color:var(--dim); }
+.tabs .tab.current { border-color:var(--good); color:var(--good); }
+.cta { background:var(--panel); border:3px solid var(--accent);
+  border-radius:1vh; padding:1.6vh 2.4vh; font-size:2.4vh; }
+#pair-code { font-size:5.4vh; letter-spacing:1.1vh; font-family:Consolas,monospace;
   background:var(--panel); border:2px solid var(--line); border-radius:1vh;
-  padding:1vh 3vh; min-width:40vh; min-height:9vh; }
-#pair-pad { display:grid; grid-template-columns:repeat(6,9vh); gap:1vh; }
-#pair-pad .key { height:8vh; font-size:3.2vh; background:var(--panel);
+  padding:1vh 3vh; min-width:40vh; }
+#pair-pad { display:grid; grid-template-columns:repeat(6,9vh); gap:1vh;
+  margin-top:1.5vh; }
+#pair-pad .key { height:7.5vh; font-size:3vh; background:var(--panel);
   border:2px solid var(--line); border-radius:1vh; color:var(--fg);
   display:flex; align-items:center; justify-content:center; }
+
+/* on-screen keyboard */
+#view-osk { background:rgba(11,16,32,.97); z-index:10;
+  display:flex; flex-direction:column; gap:1.6vh; align-items:flex-start; }
+#osk-value { font-size:3.4vh; font-family:Consolas,monospace;
+  background:var(--panel); border:2px solid var(--line); border-radius:1vh;
+  padding:1.2vh 2vh; min-width:60vw; word-break:break-all; }
+#osk-keys { display:flex; flex-direction:column; gap:1vh; }
+.osk-row { display:flex; gap:1vh; }
+.osk-row .key { width:7vh; height:7vh; font-size:2.8vh; background:var(--panel);
+  border:2px solid var(--line); border-radius:1vh;
+  display:flex; align-items:center; justify-content:center; }
+.osk-row.osk-actions .key { width:auto; padding:0 2vh; font-size:2.3vh; }
 
 /* library */
 #view-library { display:flex; flex-direction:column; gap:1.5vh; }
@@ -35,15 +71,22 @@ html,body { background:var(--bg); color:var(--fg);
 #platform-rail .plat { padding:1vh 2vh; font-size:2.2vh; white-space:nowrap;
   background:var(--panel); border:2px solid var(--line); border-radius:3vh; }
 #platform-rail .plat.current { border-color:var(--good); color:var(--good); }
-#game-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:1.5vh;
-  overflow-y:hidden; flex:1; align-content:start; }
+/* Rows are sized explicitly. With grid-auto-rows:auto the track algorithm
+ * cannot resolve a cover whose height comes from aspect-ratio on a percentage
+ * width, and every row collapses to the container height divided by the row
+ * count (11px tall tiles with the artwork overflowing and clipped). */
+#game-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:1.5vh;
+  grid-auto-rows:30vh; overflow-y:hidden; flex:1; align-content:start; }
 #game-grid .tile { background:var(--panel); border:3px solid var(--line);
-  border-radius:1vh; overflow:hidden; display:flex; flex-direction:column; }
-#game-grid .tile img { width:100%; aspect-ratio:3/4; object-fit:cover;
-  background:#000; }
-#game-grid .tile .t { font-size:1.7vh; padding:0.8vh; height:5vh;
-  overflow:hidden; }
-#game-grid .tile .badge { position:absolute; }
+  border-radius:1vh; overflow:hidden; display:flex; flex-direction:column;
+  height:100%; }
+#game-grid .tile img, #game-grid .tile .ph { width:100%; height:23.5vh;
+  flex:none; object-fit:cover; background:#000; }
+/* Clamp rather than clip: ROM names are long and a hard cut mid-word reads as
+ * a rendering fault on a TV. */
+#game-grid .tile .t { font-size:1.6vh; line-height:1.25; padding:0.6vh 0.8vh;
+  flex:1; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical;
+  -webkit-line-clamp:3; }
 
 .focus { border-color:var(--accent) !important;
   box-shadow:0 0 2vh rgba(125,211,252,.6); transform:scale(1.03); }
@@ -52,8 +95,9 @@ html,body { background:var(--bg); color:var(--fg);
 #view-local, #view-stream { padding:0; background:#000; }
 #game { width:100vw; height:100vh; }
 #stream-video { width:100vw; height:100vh; object-fit:contain; background:#000; }
-#stream-overlay { position:absolute; inset:0; display:flex; align-items:center;
-  justify-content:center; background:rgba(11,16,32,.85); font-size:3vh; }
-#quit-hint { position:absolute; top:2vh; right:2vw; font-size:2vh;
+.overlay { position:absolute; inset:0; display:flex; align-items:center;
+  justify-content:center; background:rgba(11,16,32,.9); font-size:3vh;
+  text-align:center; padding:5vh 8vw; }
+#quit-hint { position:absolute; top:5vh; right:5vw; font-size:2vh;
   color:var(--dim); background:rgba(11,16,32,.7); padding:1vh 2vh;
   border-radius:1vh; }

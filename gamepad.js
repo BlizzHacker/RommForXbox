@@ -62,11 +62,14 @@ const GP = (() => {
   }
   requestAnimationFrame(poll);
 
-  // keyboard fallback so the app is testable in any browser
+  // Keyboard fallback, so the app works with a USB keyboard on the console and
+  // is drivable under test. The on-screen keyboard reads physical keys itself —
+  // if it is open it owns them, or Enter and Backspace would fire twice.
   const KEYS = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left',
                  ArrowRight:'right', Enter:'a', Escape:'b', Backspace:'b',
                  PageUp:'l1', PageDown:'r1' };
   window.addEventListener('keydown', e => {
+    if (typeof OSK !== 'undefined' && OSK.active) return;
     const n = KEYS[e.key];
     if (n && uiHandler) { e.preventDefault(); uiHandler(n); }
   });

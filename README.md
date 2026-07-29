@@ -16,14 +16,25 @@ platforms are never shown.
 
 Save states persist on the server across both tiers and across devices.
 
-## Pairing
+## Connecting to your server
 
-Uses RomM 4.9 client API tokens — the app never sees your password:
+On first run the app asks for your RomM address, checks it really is a RomM, and
+remembers it. Everything then comes from your server — library, covers, ROM
+bytes, EmulatorJS and save states.
 
-1. Sign into RomM in a browser, create a Client API Token
-   (read-only `platforms.read` + `roms.read`), choose **Pair**.
-2. Enter the eight-digit code on the Xbox. The scoped token lives in
-   `localStorage` and can be revoked in RomM at any time.
+Sign in either way:
+
+* **Pair** (preferred) — in RomM: **Settings → Client API Tokens → Add →
+  Pair**, then type the eight-digit code on the console. The app only ever holds
+  a scoped token, revocable in RomM at any time; it never sees your password.
+* **Username and password** — for a controller-only console that cannot easily
+  reach RomM's web UI to mint a code.
+
+**Serve the app from the same origin as your RomM.** RomM sends CORS headers on
+its JSON API but not on ROM downloads or `/assets` (nginx serves those), so a
+remote RomM will browse but not play. See
+[docs/multi-tenancy.md](docs/multi-tenancy.md) for why and for the two-header
+workaround.
 
 ## Deploy
 
@@ -43,8 +54,14 @@ in-stream hold **Menu + View** 1 s to quit.
 
 ## Installable Xbox app (MSIX)
 
+`python scripts/make-assets.py` regenerates the tile art;
 `node scripts/build-msix.mjs` builds `dist/RommForXbox_<ver>_neutral.msix`, a
 hosted web app targeting `Windows.Xbox` whose start page is
 `https://xbox.moveweight.com/`. Sideload it on a Dev Mode console (Device
 Portal > Add), or submit it to the Microsoft Store for retail installs.
 Set `ROMM_XBOX_SIGN_PFX`/`ROMM_XBOX_SIGN_PWD` to sign the output.
+
+**Read [docs/xbox-store-status.md](docs/xbox-store-status.md) before relying on
+the packaged app.** The browser path above is verified; a hosted web app runs on
+the deprecated EdgeHTML engine on console, so whether EmulatorJS can run *inside
+the packaged app* is untested — there is no console here to test it on.
