@@ -97,8 +97,13 @@ namespace RommForXbox.Shell
             {
                 if (req.Content != null && !IsBodyless(req.Method))
                 {
+                    // Request.Content is a WinRT IRandomAccessStream, not a
+                    // System.IO.Stream — AsStreamForRead bridges the two.
                     var buffer = new MemoryStream();
-                    await req.Content.CopyToAsync(buffer);
+                    using (var inbound = req.Content.AsStreamForRead())
+                    {
+                        await inbound.CopyToAsync(buffer);
+                    }
                     buffer.Position = 0;
                     outbound.Content = new StreamContent(buffer);
                 }
