@@ -350,10 +350,13 @@ async function loadGames() {
 function renderRail() {
   const rail = $('platform-rail');
   rail.innerHTML = '';
+  // The count is not decoration: RomM can hold two platforms with the same
+  // display name (two "Amiga" entries on this library), and without it they are
+  // indistinguishable in the rail.
   platforms.forEach(({ p }, i) => {
     const d = document.createElement('div');
     d.className = 'plat' + (i === platIdx ? ' current' : '');
-    d.textContent = p.display_name || p.name || p.slug;
+    d.textContent = `${p.display_name || p.name || p.slug} (${p.rom_count})`;
     rail.appendChild(d);
   });
   const cur = rail.children[platIdx];
@@ -413,19 +416,16 @@ function startGame(g) {
   if (tier === 'local') startLocal(p, g); else startStream(p, g);
 }
 
-// EmulatorJS owns the pad during local play, but the Gamepad API is poll-based
-// and non-exclusive: watch for Menu+View held ~1 s to quit back to the library.
+// EmulatorJS owns the pad during local play, but our polling is non-exclusive:
+// watch for Menu+View held ~1 s to quit back to the library. Read through GP so
+// this works whether input comes from the Gamepad API or the native host.
 function armLocalQuitWatcher() {
   let heldSince = 0;
   const iv = setInterval(() => {
     if (view !== 'local') { clearInterval(iv); return; }
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const p = [...pads].find(x => x && x.connected);
-    const held = p && p.buttons[8] && p.buttons[9] &&
-                 p.buttons[8].pressed && p.buttons[9].pressed;
-    if (held) {
+    if (GP.isHeld('select') && GP.isHeld('start')) {
       if (!heldSince) heldSince = Date.now();
-      else if (Date.now() - heldSince > 1000) location.reload();
+      else if (Date.now() - heldSince > 1000) { releaseBlobs(); location.reload(); }
     } else heldSince = 0;
   }, 100);
 }

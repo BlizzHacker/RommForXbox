@@ -62,6 +62,47 @@ The fix is not a web fix. It needs a native host that can either proxy the
 fetches or inject the header — which is what option 1 below buys, using
 WebView2's `WebResourceRequested` interception.
 
+## The third problem: the controller does not reach WebView2
+
+Found while scoping the shell, and it would have been discovered late otherwise:
+**the Gamepad API does not work inside WebView2 on UWP/WinUI 2.**
+[WebView2Feedback#4366](https://github.com/MicrosoftEdge/WebView2Feedback/issues/4366)
+has been open since February 2024, is labelled a tracked bug, the reporter
+classes it Blocking, and it "never worked" — a pad that works in Chrome and Edge
+is invisible to WebView2 content. There is no documented workaround.
+
+Since this whole app is navigated with the pad, the shell has to supply input
+itself. That is straightforward and now prepared for on the web side:
+
+* the shell reads `Windows.Gaming.Input.Gamepad` natively (fully available to a
+  UWP app) and posts state to the page at ~60 Hz;
+* `host-bridge.js` receives it and calls `GP.setHostState(...)`;
+* `gamepad.js` treats host state and the Gamepad API as interchangeable sources,
+  so nothing else in the app changes.
+
+**This path is verified without a console** — the verification harness
+simulates the host by calling `GP.setHostState()` and asserts the UI responds
+(platform changes on an injected RB press), then hands control back.
+
+## What the shell has to do
+
+Three jobs, one per blocker:
+
+1. **Host a WebView2** (Chromium, so EmulatorJS can run at all) with the app
+   content packaged locally, so the app does not depend on our origin.
+2. **Inject the CORS header RomM omits**, via `CoreWebView2.WebResourceRequested`
+   / `WebResourceResponseReceived`, so ROM bytes and `/assets` from a customer's
+   own remote RomM are accepted by the page.
+3. **Bridge the controller** as above.
+
+Build it in **GitHub Actions on `windows-latest`** rather than installing the
+Visual Studio UWP workload locally — the hosted image carries the UWP build
+tools, and it keeps several GB off `C:`.
+
+Remote debugging on a console is documented (Dev Mode + Device Portal
+`:11443` + `--enable-features=msEdgeDevToolsWdpRemoteDebugging`), so once
+hardware exists the shell is inspectable with real DevTools.
+
 ## The three ways forward
 
 1. **WinUI 2 UWP shell hosting WebView2** — the architecture Microsoft actually

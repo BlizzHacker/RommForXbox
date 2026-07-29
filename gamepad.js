@@ -13,7 +13,15 @@ const GP = (() => {
   const AXIS_DEAD = 0.45;
   const axisPrev = { up:false, down:false, left:false, right:false };
 
+  // Input can arrive two ways. In a browser it is the Gamepad API. Inside a
+  // WebView2 UWP host it cannot be: the Gamepad API does not reach WebView2
+  // content (MicrosoftEdge/WebView2Feedback#4366, open since Feb 2024), so the
+  // native shell reads Windows.Gaming.Input and posts state in. Same shape
+  // either way, so nothing downstream cares which one is live.
+  let hostState = null;
+
   function pad() {
+    if (hostState) return hostState;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const p of pads) if (p && p.connected) return p;
     return null;
@@ -78,5 +86,17 @@ const GP = (() => {
     onUI(fn) { uiHandler = fn; },
     onRaw(fn) { rawHandler = fn; },
     isHeld(name) { return !!prev[name]; },
+    // Called by the native host bridge, ~60 Hz. Pass null to hand control back
+    // to the Gamepad API. `buttons` may be booleans or {pressed} objects.
+    setHostState(s) {
+      if (!s) { hostState = null; return; }
+      hostState = {
+        connected: true,
+        buttons: (s.buttons || []).map(
+          b => (typeof b === 'object' ? b : { pressed: !!b })),
+        axes: s.axes || [],
+      };
+    },
+    get usingHost() { return !!hostState; },
   };
 })();
