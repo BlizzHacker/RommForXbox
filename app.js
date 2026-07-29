@@ -175,8 +175,8 @@ function setupInput(btn) {
     // Settings reached from the library: go back. Otherwise this is the root,
     // and back should leave the app rather than do nothing.
     if (CFG.server && CFG.token) return enterLibrary();
-    if (HOST.exit()) return;
-    renderSetup('Press the Xbox button to leave.');
+    // In a browser there is nothing to exit — closing the tab is the user's job.
+    HOST.exit();
     return;
   }
   else return;
