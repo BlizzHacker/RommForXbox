@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Identity must stay byte-identical to Partner Center product 9MXC51W17LH4,
+     or the Store treats this as a different app. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  IgnorableNamespaces="uap mp">
+
+  <Identity Name="MOVEWEIGHT.RomMforXbox"
+            Publisher="CN=6375D74B-5E4F-45B4-B246-B29507C1332A"
+            Version="0.3.0.0" />
+
+  <mp:PhoneIdentity PhoneProductId="4f1c9e6a-3b7d-4e2a-9c51-8d0a6f2b7c31"
+                    PhonePublisherId="00000000-0000-0000-0000-000000000000" />
+
+  <Properties>
+    <DisplayName>RomM for Xbox</DisplayName>
+    <PublisherDisplayName>MOVE WEIGHT</PublisherDisplayName>
+    <Description>Play your own self-hosted RomM retro game library on Xbox with the controller.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Xbox" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26200.0" />
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26200.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+                 Executable="$targetnametoken$.exe"
+                 EntryPoint="RommForXbox.Shell.App">
+      <uap:VisualElements
+        DisplayName="RomM for Xbox"
+        Description="Play your own self-hosted RomM retro game library on Xbox with the controller."
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="#0B1020">
+        <uap:DefaultTile ShortName="RomM"
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png"
+          Wide310x150Logo="Assets\Wide310x150Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#0B1020" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- A RomM on the same LAN is the common case, and Xbox blocks loopback and
+         local-network access without this. -->
+    <Capability Name="privateNetworkClientServer" />
+  </Capabilities>
+</Package>

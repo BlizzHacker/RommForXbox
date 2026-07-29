@@ -1,0 +1,80 @@
+name: Build Xbox shell MSIX
+
+# The UWP workload is several GB and is not installed on the dev machine, so the
+# packaged app is built here instead. Diagnostics run before the build so a
+# missing component is identifiable from one failed run rather than three.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'shell/**'
+      - '.github/workflows/shell-msix.yml'
+      - '*.js'
+      - 'index.html'
+      - 'style.css'
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Toolchain diagnostics
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          & $vswhere -products * -format value -property installationPath
+          $ip = & $vswhere -products * -format value -property installationPath | Select-Object -First 1
+          Write-Host "--- UWP (AppxPackage) targets ---"
+          $appx = Join-Path $ip 'MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage'
+          if (Test-Path $appx) { Get-ChildItem $appx | Select-Object -First 8 Name }
+          else { Write-Host "MISSING: $appx  (UWP workload not present on this image)" }
+          Write-Host "--- Windows SDKs ---"
+          $sdk = "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP"
+          if (Test-Path $sdk) { Get-ChildItem $sdk | Select-Object Name } else { Write-Host "no UAP platforms" }
+          Write-Host "--- MSBuild ---"
+          msbuild -version
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          msbuild shell\RommForXbox.Shell.sln /t:Restore `
+            /p:Configuration=Release /p:Platform=x64 `
+            /p:RestorePackagesConfig=true /v:minimal
+
+      - name: Build MSIX
+        shell: pwsh
+        run: |
+          msbuild shell\RommForXbox.Shell\RommForXbox.Shell.csproj `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:AppxBundle=Never `
+            /p:AppxBundlePlatforms=x64 `
+            /p:UapAppxPackageBuildMode=StoreUpload `
+            /p:AppxPackageSigningEnabled=false `
+            /p:GenerateAppInstallerFile=false `
+            /v:minimal /consoleloggerparameters:Summary
+
+      - name: Locate output
+        id: out
+        shell: pwsh
+        run: |
+          $pkgs = Get-ChildItem -Recurse -Include *.msix,*.msixupload,*.appx `
+            -Path shell -ErrorAction SilentlyContinue
+          if (-not $pkgs) { Write-Error "no package produced"; exit 1 }
+          $pkgs | ForEach-Object { Write-Host ("{0}  {1:N0} bytes" -f $_.FullName, $_.Length) }
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: RommForXbox-shell-msix
+          path: |
+            shell/**/*.msix
+            shell/**/*.msixupload
+            shell/**/AppxManifest.xml
+          if-no-files-found: error
