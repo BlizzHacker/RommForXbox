@@ -6,7 +6,8 @@
  * optional and only adds the platforms EmulatorJS cannot run. */
 'use strict';
 
-const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream'];
+const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
+const BUILD = '0.7.0.0';        // keep in step with Package.appxmanifest
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
@@ -197,6 +198,7 @@ function askServer() {
         setupIdx = setupItems().length - 1;
         renderSetup();
       } catch (e) {
+        noteFailure("server probe", e);
         OSK.setStatus(probeMessage(e, list[list.length - 1]));
       }
     },
@@ -255,8 +257,77 @@ function useServer(server) {
   enterAuth();
 }
 
+/* ------------------------------------------------------------ diagnostics */
+
+let lastFailure = '';
+function noteFailure(what, e) {
+  lastFailure = what + ': ' + ((e && e.message) || e || 'unknown');
+}
+
+async function renderDiag(status) {
+  const rows = [
+    ['Build', BUILD],
+    ['Running in', HOST.present ? 'Xbox app (native host)' : 'browser'],
+    ['Controller', GP.usingHost ? 'via native host'
+      : ((navigator.getGamepads ? [...navigator.getGamepads()] : [])
+          .filter(Boolean).length ? 'via Gamepad API' : 'not detected')],
+    ['RomM server', CFG.server || 'not set'],
+    ['Signed in', CFG.token ? 'yes (' + (CFG.mode || 'client') + ')' : 'no'],
+    ['Stream server', CFG.stream || 'none'],
+    ['Playable platforms', platforms.length ? String(platforms.length) : '—'],
+    ['Last failure', lastFailure || 'none'],
+  ];
+  if (HOST.present && CFG.server) {
+    rows.splice(4, 0, ['Requests routed as', HOST.route(CFG.server)]);
+  }
+  const dl = $('diag-kv');
+  dl.innerHTML = '';
+  for (const [k, v] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    dl.appendChild(dt); dl.appendChild(dd);
+  }
+  if (status !== undefined) $('diag-status').textContent = status;
+}
+
+async function testDiag() {
+  if (!CFG.server) return renderDiag('No server set — nothing to test.');
+  renderDiag('Testing ' + CFG.server + ' …');
+  const results = [];
+  try {
+    const { version } = await ROMM.probe(CFG.server);
+    results.push('server reachable (RomM ' + version + ')');
+  } catch (e) {
+    results.push('server UNREACHABLE — ' + (e.message || 'error'));
+  }
+  if (CFG.token) {
+    try {
+      const p = await ROMM.platforms();
+      results.push((p || []).length + ' platforms readable');
+    } catch (e) {
+      results.push('library read FAILED — ' + (e.message || 'error'));
+    }
+    // The check that actually matters: ROM bytes and EmulatorJS come from paths
+    // RomM does not add CORS headers to, which is what the native host works
+    // around. Browsing can succeed while play fails.
+    try {
+      const r = await fetch(ROMM.emulatorJsData() + 'loader.js');
+      results.push(r.ok ? 'EmulatorJS reachable' : 'EmulatorJS HTTP ' + r.status);
+    } catch (e) {
+      results.push('EmulatorJS UNREACHABLE — ' + (e.message || 'error'));
+    }
+  }
+  renderDiag(results.join(' · '));
+}
+
+function diagInput(btn) {
+  if (btn === 'a') return testDiag();
+  if (btn === 'b' || btn === 'y') { show('setup'); return renderSetup(''); }
+}
+
 function setupInput(btn) {
   const items = setupItems();
+  if (btn === 'x') { show('diag'); return renderDiag(''); }
   if (btn === 'up') setupIdx = (setupIdx + items.length - 1) % items.length;
   else if (btn === 'down') setupIdx = (setupIdx + 1) % items.length;
   else if (btn === 'a') return items[setupIdx].go();
@@ -453,6 +524,7 @@ async function loadGames() {
     $('lib-status').textContent = games.length ? footnote() : 'No games on this platform.';
   } catch (e) {
     if (e instanceof ROMM.AuthError) { CFG.clearAuth(); return enterAuth(); }
+    noteFailure('load games', e);
     $('lib-status').textContent = 'Could not load games: ' + e.message;
   }
 }
@@ -651,6 +723,7 @@ function startStream(p, g) {
 
 GP.onUI(btn => {
   if (OSK.active) return OSK.input(btn);
+  if (view === 'diag') return diagInput(btn);
   if (view === 'setup') return setupInput(btn);
   if (view === 'auth') return authInput(btn);
   if (view === 'library') return libraryInput(btn);

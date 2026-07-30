@@ -213,7 +213,10 @@ namespace RommForXbox.Shell
             sb.Append("Access-Control-Allow-Origin: *\r\n");
             sb.Append("Access-Control-Allow-Methods: GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS\r\n");
             sb.Append("Access-Control-Allow-Headers: Authorization, Content-Type\r\n");
-            sb.Append("Access-Control-Expose-Headers: Content-Length, Content-Type, Content-Disposition\r\n");
+            // X-Proxy-Error is exposed so the page can show a tester why a request
+            // failed instead of a bare "Failed to fetch".
+            sb.Append("Access-Control-Expose-Headers: Content-Length, Content-Type, "
+                      + "Content-Disposition, Content-Range, Accept-Ranges, X-Proxy-Error\r\n");
 
             if (resp != null)
             {

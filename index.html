@@ -19,8 +19,19 @@
   </dl>
   <div id="setup-options"></div>
   <p id="setup-status" class="status"></p>
-  <p class="hint dim">D-pad to move · A to choose ·
+  <p class="hint dim">D-pad to move · A to choose · X for diagnostics ·
     no RomM server yet? Set one up at <b>romm.app</b></p>
+</div>
+
+<!-- Diagnostics. Exists so a tester can report facts rather than "it did not
+     work": which build, whether the native host is live, and what the last
+     failure actually was. -->
+<div id="view-diag" class="view hidden">
+  <h1>Diagnostics</h1>
+  <p class="lede">Read this out or photograph it when reporting a problem.</p>
+  <dl class="kv" id="diag-kv"></dl>
+  <p id="diag-status" class="status"></p>
+  <p class="hint dim">A to re-test · B to go back</p>
 </div>
 
 <!-- Sign in -->

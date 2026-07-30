@@ -55,12 +55,46 @@ const OSK = (() => {
     el('osk-value').textContent =
       (mask ? '•'.repeat(value.length) : value) || ' ';
     if (status !== undefined) el('osk-status').textContent = status;
+    saveDraft();            // every visible change is a checkpoint
+  }
+
+  /* Drafts survive the app dying mid-typing.
+   *
+   * On Xbox the B button is the console's own "back" and the shell has to claim
+   * it; if that ever fails, the app closes. Losing a half-typed server address to
+   * that is the single most annoying thing that can happen on this screen, so the
+   * text is persisted as it is typed and offered back on the next launch.
+   * Passwords are never persisted. */
+  const draftKey = o => (o && o.password) ? null
+    : 'osk_draft_' + String((o && o.title) || 'field').replace(/\W+/g, '_');
+
+  function saveDraft() {
+    const k = draftKey(opts);
+    if (!k) return;
+    try {
+      if (value) localStorage.setItem(k, value);
+      else localStorage.removeItem(k);
+    } catch (_) { /* storage full or blocked; drafts are a nicety */ }
+  }
+
+  function clearDraft() {
+    const k = draftKey(opts);
+    if (!k) return;
+    try { localStorage.removeItem(k); } catch (_) {}
   }
 
   function open(o) {
     opts = o;
     value = o.value || '';
     mask = !!o.password;
+    // Only restore when the caller had nothing to prefill, so an existing setting
+    // always wins over a stale draft.
+    if (!value) {
+      const k = draftKey(o);
+      if (k) {
+        try { value = localStorage.getItem(k) || ''; } catch (_) {}
+      }
+    }
     shift = false; row = 0; col = 0;
     active = true;
     el('osk-title').textContent = o.title || '';
@@ -91,6 +125,9 @@ const OSK = (() => {
 
   function submit() {
     const cb = opts && opts.onSubmit;
+    // Cleared before the callback runs: if it succeeds the draft is stale, and if
+    // it fails the value is still on screen to correct.
+    clearDraft();
     if (cb) cb(value, { status: render, close });
   }
 

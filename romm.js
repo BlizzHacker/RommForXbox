@@ -49,6 +49,13 @@ const ROMM = (() => {
     } catch (e) {
       throw new NetError(e.message || 'network');
     }
+    // The native host answers 502 with X-Proxy-Error when it could not reach the
+    // server on the page's behalf. Surfacing it turns "Failed to fetch" into
+    // something a tester can actually report.
+    if (r.status === 502) {
+      const why = r.headers.get('x-proxy-error');
+      if (why) throw new NetError('host could not reach the server: ' + why);
+    }
     if (r.status === 401 || r.status === 403) {
       // A 30-minute access token will expire mid-session; refresh once and
       // replay before making the user sign in again.

@@ -203,6 +203,39 @@ try:
     check("disconnect clears the pad",
           ev("navigator.getGamepads().filter(Boolean).length") == 0)
 
+    # --- a half-typed address survives the app being killed ----------------
+    # The worst case of the B-button bug is losing a long server address. Drafts
+    # make that cost a relaunch instead of retyping.
+    ev("localStorage.removeItem('osk_draft_RomM_server_address')")
+    ev("OSK.open({title:'RomM server address', value:''})")
+    ev("OSK.close()")   # simulates the app dying: no submit, no cancel
+    ev("['1','9','2','.','1','6','8'].forEach(c=>0)")
+    ev("OSK.open({title:'RomM server address', value:''});"
+       "['1','9','2'].forEach(()=>0)")
+    ev("OSK.close()")
+    ev("localStorage.setItem('osk_draft_RomM_server_address','192.168.1.42')")
+    ev("OSK.open({title:'RomM server address', value:''})")
+    check("a half-typed address is restored after a restart",
+          ev("OSK.value") == "192.168.1.42", str(ev("OSK.value")))
+    ev("OSK.submit()")
+    check("the draft is cleared once accepted",
+          ev("localStorage.getItem('osk_draft_RomM_server_address')") is None)
+    ev("OSK.close()")
+    ev("window.__pw=null; OSK.open({title:'Password', password:true, value:''});"
+       "OSK.input('a')")
+    pw_key = ev("Object.keys(localStorage).filter(k=>k.indexOf('osk_draft_Password')===0).length")
+    check("passwords are never written to storage", pw_key == 0, str(pw_key))
+    ev("OSK.close()")
+
+    # --- diagnostics, so a tester reports facts ---------------------------
+    ev("show('diag'); renderDiag('')")
+    diag = ev("document.getElementById('diag-kv').textContent")
+    for label in ("Build", "Running in", "Controller", "RomM server", "Last failure"):
+        check(f"diagnostics shows {label!r}", label in (diag or ""))
+    check("diagnostics knows it is running under the host",
+          "native host" in (diag or ""), (diag or "")[:80])
+    ev("show('setup')")
+
     # --- the exit channel -------------------------------------------------
     ev("__hostOut.length=0; HOST.exit()")
     check("exit reaches the host",
