@@ -45,6 +45,11 @@ Backspace is X, not B. That is deliberate: on Xbox, B is the system's own "back"
 and the app has to wrestle it away. If it ever loses that fight the app closes, so
 nothing important is bound to B.
 
+**Menu and View are claimed too, as of 0.9.0.0.** WebView2 on Xbox used them to
+offer switching out of gamepad mode into a mouse cursor — with no way back, because
+this app has no cursor to switch to. That prompt should no longer appear anywhere.
+*If it ever does, that is a bug worth reporting immediately.*
+
 ## What to check
 
 **1. It launches.** You should see "RomM server address", not a black screen or a
@@ -61,8 +66,11 @@ came back.*
 **3. A plain-http server on your LAN connects.** Type just the address —
 `192.168.1.42`. No `http://`, no port, no domain name. The app tries http first
 for private addresses.
-*If it says it could not reach it, open Diagnostics (**X** on the first screen)
-and press **A** to re-test. The result line names which step failed.*
+
+When you press Done you now get a **transcript** under the keyboard: the addresses
+it will try, the URL the app actually fetches, and each attempt's result. A failure
+takes at most 12 seconds per address — it will not sit there indefinitely.
+*If it fails, that transcript is the report. Photograph it.*
 
 **4. The library loads with cover art.** Sign in (RB switches to username &
 password if you cannot make a pairing code from the couch). **LB/RB** change
