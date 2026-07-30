@@ -37,12 +37,21 @@ namespace RommForXbox.Shell
             _virtualHost = virtualHost;
         }
 
+        // How long to wait for a server to start answering. Reaching the headers is
+        // either fast or never: a wrong address, a console on another subnet or a
+        // stopped server all fail by silence, and a long wait there is
+        // indistinguishable from the app being frozen.
+        private static readonly TimeSpan HeaderTimeout = TimeSpan.FromSeconds(12);
+
         private static HttpClient CreateClient()
         {
             var handler = new HttpClientHandler { AllowAutoRedirect = true };
             var c = new HttpClient(handler);
-            // Long enough for a large ROM over a slow link; the page shows progress.
-            c.Timeout = TimeSpan.FromMinutes(30);
+            // No client-wide timeout. It would have to be long enough for a
+            // several-hundred-megabyte ROM, and a single number cannot be both that
+            // and short enough to fail a bad address quickly — 30 minutes here made
+            // a mistyped server look like a hung app. Timing is per phase below.
+            c.Timeout = Timeout.InfiniteTimeSpan;
             return c;
         }
 
@@ -133,8 +142,27 @@ namespace RommForXbox.Shell
                     }
                 }
 
-                var resp = await Http.SendAsync(
-                    outbound, HttpCompletionOption.ResponseHeadersRead);
+                HttpResponseMessage resp;
+                using (var cts = new CancellationTokenSource(HeaderTimeout))
+                {
+                    try
+                    {
+                        resp = await Http.SendAsync(
+                            outbound, HttpCompletionOption.ResponseHeadersRead,
+                            cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Reported as a real response so the page can say which host
+                        // went quiet rather than showing a bare "Failed to fetch".
+                        return Error(sender, "no reply from " + SafeHost(target)
+                                     + " within " + (int)HeaderTimeout.TotalSeconds
+                                     + "s");
+                    }
+                    // Headers are in. Disarm the timer so streaming a large ROM body
+                    // is not cut off by it.
+                    cts.CancelAfter(Timeout.InfiniteTimeSpan);
+                }
 
                 var length = resp.Content.Headers.ContentLength;
                 var body = length.HasValue && length.Value > SpillToDiskBytes
@@ -242,6 +270,14 @@ namespace RommForXbox.Shell
                     sb.Append(name).Append(": ").Append(v).Append("\r\n");
                 }
             }
+        }
+
+        /// <summary>Host and port only — never echo a path or query into a message.</summary>
+        private static string SafeHost(string url)
+        {
+            Uri u;
+            return Uri.TryCreate(url, UriKind.Absolute, out u)
+                ? u.Scheme + "://" + u.Authority : "the server";
         }
 
         private static CoreWebView2WebResourceResponse Error(CoreWebView2 sender, string why)

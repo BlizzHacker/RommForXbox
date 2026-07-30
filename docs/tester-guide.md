@@ -10,7 +10,7 @@ Dev Mode console, via the Xbox Device Portal:
 1. Console: Settings → System → Console info → Developer settings → note the
    Device Portal address (`https://<console-ip>:11443`).
 2. Browser on a PC: open that address, accept the certificate warning.
-3. **Home → Add** → upload `RommForXbox_0.8.0.0_x64_SIDELOAD.msix` →
+3. **Home → Add** → upload `RommForXbox_0.9.0.0_x64_SIDELOAD.msix` →
    **Start**.
 
 It appears under *Apps* as **RomM for Xbox**.
@@ -23,7 +23,7 @@ goes up, so a higher version replaces the lower one in place and your server
 address and sign-in are kept.
 
 **Then confirm which build you are actually running:** press **X** on the first
-screen. The top line of Diagnostics reads `Build 0.8.0.0`. If it says anything
+screen. The top line of Diagnostics reads `Build 0.9.0.0`. If it says anything
 lower, the update did not take — the usual cause is the console still running the
 old copy, so close the app fully from the dashboard (Menu → Quit) and reopen it.
 

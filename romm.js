@@ -108,7 +108,7 @@ const ROMM = (() => {
   // Tries each candidate in turn and returns the first that really is a RomM,
   // so the user can type "192.168.1.42" and not care about the scheme. The last
   // error is kept: if nothing answers, that one describes the likeliest attempt.
-  async function probeAny(list, onTry) {
+  async function probeAny(list, onTry, onFail) {
     let last = new NetError('network');
     for (const server of list || []) {
       if (onTry) onTry(server);
@@ -117,6 +117,7 @@ const ROMM = (() => {
         return { server, version };
       } catch (e) {
         last = e;
+        if (onFail) onFail(server, e);
         // A server that answered but is not RomM is a definite answer; trying
         // the same host on another scheme will not change it.
         if (e instanceof NetError && e.message === 'not-romm') throw e;

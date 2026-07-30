@@ -7,7 +7,7 @@
 'use strict';
 
 const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
-const BUILD = '0.8.0.0';        // keep in step with Package.appxmanifest
+const BUILD = '0.9.0.0';        // keep in step with Package.appxmanifest
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
@@ -186,10 +186,22 @@ function askServer() {
     value: CFG.server || '',
     onSubmit: async raw => {
       const list = CFG.candidates(raw);
+      OSK.logReset();
       if (!list.length) return OSK.setStatus('That is not a valid address.');
+      OSK.setStatus('Connecting…');
+      // Show the plan before doing any of it, so a stall is attributable to a
+      // specific address rather than to the app in general.
+      OSK.logAdd('will try: ' + list.join('  then  '), 'ok');
+      let line = null;
       try {
-        const { server, version } = await ROMM.probeAny(
-          list, s => OSK.setStatus('Checking ' + s + ' …'));
+        const { server, version } = await ROMM.probeAny(list, s => {
+          OSK.setStatus('Connecting…');
+          if (HOST.present) OSK.logAdd('via host: ' + HOST.route(s), 'ok');
+          line = OSK.logAdd('GET ' + s + '/api/heartbeat …');
+        }, (s, e) => {
+          OSK.logDone(line, 'FAILED ' + s + ' — ' + (e.message || 'error'), 'bad');
+        });
+        OSK.logDone(line, 'OK ' + server + ' — RomM ' + version);
         CFG.server = server;
         CFG.clearAuth();
         OSK.close();

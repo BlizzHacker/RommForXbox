@@ -64,6 +64,10 @@
   <div id="osk-value"></div>
   <div id="osk-keys"></div>
   <p id="osk-status" class="status"></p>
+  <!-- Every step of a connection attempt, on the screen where it happens. A
+       status line alone could not distinguish "still trying" from "silently gave
+       up", which is exactly how a 12-second wait read as nothing happening. -->
+  <ol id="osk-log" class="log hidden"></ol>
   <p id="osk-hint" class="hint dim"></p>
 </div>
 

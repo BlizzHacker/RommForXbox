@@ -101,3 +101,13 @@ h2 { color:var(--accent); font-size:3.2vh; }
 #quit-hint { position:absolute; top:5vh; right:5vw; font-size:2vh;
   color:var(--dim); background:rgba(11,16,32,.7); padding:1vh 2vh;
   border-radius:1vh; }
+
+/* Connection log on the keyboard screen. Monospace and small: it is evidence to
+ * read out or photograph, not chrome. */
+.log { list-style:none; margin-top:1vh; font-family:Consolas,monospace;
+  font-size:1.8vh; line-height:1.5; max-width:80vw; }
+.log li { color:var(--dim); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+.log li.ok { color:var(--good); }
+.log li.bad { color:#ff8a80; }
+.log li.busy { color:var(--accent); }

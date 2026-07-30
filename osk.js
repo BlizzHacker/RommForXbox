@@ -100,6 +100,7 @@ const OSK = (() => {
     el('osk-title').textContent = o.title || '';
     el('osk-hint').textContent = o.hint || '';
     el('view-osk').classList.remove('hidden');
+    logReset();             // last attempt's transcript is not this attempt's
     render(o.status || '');
   }
 
@@ -168,10 +169,42 @@ const OSK = (() => {
     if (e.key.length === 1) { value += e.key; e.preventDefault(); render(''); }
   });
 
+  /* A running log of what a connection attempt is doing.
+   *
+   * A single status line cannot say whether the app is still waiting or has
+   * quietly stopped, which is how a silent server read as "nothing happens".
+   * Each step is a line; steps that are in progress are marked and then resolved,
+   * so a stalled attempt is visibly stalled at a named step. */
+  function logReset() {
+    const l = el('osk-log');
+    if (!l) return;
+    l.innerHTML = '';
+    l.classList.add('hidden');
+  }
+
+  function logAdd(text, kind) {
+    const l = el('osk-log');
+    if (!l) return null;
+    l.classList.remove('hidden');
+    const li = document.createElement('li');
+    li.className = kind || 'busy';
+    li.textContent = text;
+    l.appendChild(li);
+    return li;
+  }
+
   return {
     open, close, input, submit,
     get active() { return active; },
     get value() { return value; },
     setStatus(s) { if (active) el('osk-status').textContent = s; },
+    logReset, logAdd,
+    // Resolve a line returned by logAdd in place, so the log reads as a
+    // transcript rather than growing a second line per outcome.
+    logDone(li, text, kind) {
+      if (!li) return;
+      li.textContent = text;
+      li.className = kind || 'ok';
+    },
   };
 })();

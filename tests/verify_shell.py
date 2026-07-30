@@ -227,6 +227,59 @@ try:
     check("passwords are never written to storage", pw_key == 0, str(pw_key))
     ev("OSK.close()")
 
+    # --- a connection attempt must be visible while it is happening --------
+    # Reported from hardware: pressing Done showed nothing, so there was no way to
+    # tell "still trying" from "gave up". The transcript makes each step visible.
+    # Delay fetch itself rather than stubbing ROMM.probe: probeAny closes over the
+    # module-internal probe, so replacing the exported one changes nothing — and a
+    # slow server is the case that matters here.
+    ev("""
+    window.__realFetch = window.fetch;
+    window.fetch = () => new Promise(
+      (_, rej) => setTimeout(() => rej(new TypeError('Failed to fetch')), 2500));
+    """)
+    # askServer() builds the real onSubmit; a draft supplies the value the way a
+    # tester's keypresses would, so this exercises the production path.
+    ev("OSK.close();"
+       "localStorage.setItem('osk_draft_RomM_server_address','192.168.1.42');"
+       "askServer()")
+    check("the typed address is in the field",
+          ev("OSK.value") == "192.168.1.42", str(ev("OSK.value")))
+    ev("OSK.submit()")
+    time.sleep(0.3)
+    log_now = ev("document.getElementById('osk-log').textContent")
+    check("the plan is shown before anything is tried",
+          "will try" in (log_now or "") and "http://192.168.1.42" in (log_now or ""),
+          (log_now or "")[:110])
+    check("a status appears immediately, not after the wait",
+          "Connecting" in str(ev("document.getElementById('osk-status').textContent")),
+          str(ev("document.getElementById('osk-status').textContent")))
+    check("the in-flight request is named",
+          "heartbeat" in (log_now or ""), (log_now or "")[-80:])
+    if ev("HOST.present") is True:
+        check("the routed URL the host will fetch is shown",
+              "__romm/http/192.168.1.42" in (log_now or ""), (log_now or "")[:150])
+    # Real fetch again: both candidates now fail fast, and each failure must be
+    # attributed to the address that produced it.
+    ev("window.fetch = window.__realFetch")
+    ev("OSK.close();"
+       "localStorage.setItem('osk_draft_RomM_server_address','192.168.1.42');"
+       "askServer()")
+    ev("OSK.submit()")
+    for _ in range(40):
+        done = ev("document.getElementById('osk-log').textContent") or ""
+        if done.count("FAILED") >= 2:
+            break
+        time.sleep(0.25)
+    log_done = ev("document.getElementById('osk-log').textContent") or ""
+    check("each failure is attributed to its address",
+          log_done.count("FAILED") == 2, log_done[-140:])
+    check("both schemes are shown as tried",
+          "http://192.168.1.42" in log_done and "https://192.168.1.42" in log_done)
+    check("a stalled attempt no longer looks like an idle app",
+          "will try" in log_done, log_done[:60])
+    ev("OSK.close(); localStorage.removeItem('osk_draft_RomM_server_address')")
+
     # --- upgrading from an older build must not inherit its bug ------------
     # An app update keeps local storage. A tester upgrading from a build that
     # forced https:// onto bare hosts would still have that stored, fail exactly

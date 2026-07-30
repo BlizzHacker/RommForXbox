@@ -51,13 +51,42 @@ namespace RommForXbox.Shell
             // does not route gamepad input through XAML at all.
             win.Dispatcher.AcceleratorKeyActivated += (s, e) =>
             {
-                if (e.VirtualKey == VirtualKey.GamepadB) e.Handled = true;
+                if (IsClaimed(e.VirtualKey)) e.Handled = true;
             };
+        }
+
+        /* Buttons the app must claim before anything else sees them.
+         *
+         * B is the console's back gesture: unclaimed, it closes the app.
+         *
+         * Menu and View are claimed for a different reason — WebView2 on Xbox uses
+         * them to offer switching out of gamepad mode into a mouse cursor. A tester
+         * accepted that prompt and had no way back, because the app has no cursor
+         * UI to switch with. Menu is also the on-screen keyboard's "done", so the
+         * prompt was appearing at the exact moment the user meant to submit.
+         *
+         * Claiming the *key* does not stop the app seeing the button: input reaches
+         * the page through GamepadBridge, which reads Windows.Gaming.Input directly
+         * and is unaffected by key routing. */
+        private static readonly VirtualKey[] ClaimedKeys =
+        {
+            VirtualKey.GamepadB,
+            VirtualKey.GamepadMenu,
+            VirtualKey.GamepadView,
+        };
+
+        private static bool IsClaimed(VirtualKey key)
+        {
+            foreach (var k in ClaimedKeys)
+            {
+                if (k == key) return true;
+            }
+            return false;
         }
 
         private static void SwallowBack(CoreWindow sender, KeyEventArgs e)
         {
-            if (e.VirtualKey == VirtualKey.GamepadB) e.Handled = true;
+            if (IsClaimed(e.VirtualKey)) e.Handled = true;
         }
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
