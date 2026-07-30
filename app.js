@@ -34,7 +34,14 @@ function releaseBlobs() {
 const EJS_CORES = {
   nes: 'nes', famicom: 'nes', fds: 'nes', snes: 'snes', sfam: 'snes',
   n64: 'n64', gb: 'gb', gbc: 'gbc', gba: 'gba', nds: 'nds',
-  'genesis-slash-megadrive': 'segaMD', sms: 'segaMS', gamegear: 'segaGG',
+  // RomM renamed several slugs; both spellings are kept so the app works
+  // against older and current servers. Missing one is not a small thing — an
+  // unmapped platform is hidden from the library entirely, and "genesis" alone
+  // accounted for ~1,900 games that looked unplayable.
+  'genesis-slash-megadrive': 'segaMD', genesis: 'segaMD',
+  'turbografx-16-slash-pc-engine-cd': 'pcecd', 'turbografx-cd': 'pcecd',
+  'nintendo-dsi': 'nds', satellaview: 'snes', sg1000: 'segaMS',
+  sms: 'segaMS', gamegear: 'segaGG',
   sega32: 'sega32x', segacd: 'segaCD', saturn: 'segaSaturn',
   psx: 'psx', ps: 'psx', psp: 'psp', arcade: 'arcade', mame: 'mame2003',
   neogeoaes: 'arcade', neogeomvs: 'arcade', 'neo-geo-pocket': 'ngp',
