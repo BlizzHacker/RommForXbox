@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Microsoft.Web.WebView2.Core;
 using Windows.ApplicationModel;
+using Windows.System;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -34,13 +35,29 @@ namespace RommForXbox.Shell
             InitializeComponent();
             Loaded += OnLoaded;
 
-            // On Xbox the B button raises system back, which would tear the app
-            // down mid-typing — B is backspace in the app's on-screen keyboard.
-            // The page owns B (it is delivered through GamepadBridge like every
-            // other button), so swallow the system gesture and let the page
-            // decide. The page asks to leave explicitly, via {"t":"exit"}.
-            SystemNavigationManager.GetForCurrentView().BackRequested +=
-                (s, e) => e.Handled = true;
+            // On Xbox, B tears the app down unless the app claims it, and the
+            // chain is: KeyDown/KeyUp → if unhandled, BackRequested → if
+            // unhandled, the shell closes the app. Handling only BackRequested
+            // was not enough on hardware, so claim B at the earliest stage too.
+            // The page owns B — it arrives through GamepadBridge like any other
+            // button — and asks to leave explicitly, via {"t":"exit"}.
+            var nav = SystemNavigationManager.GetForCurrentView();
+            nav.BackRequested += (s, e) => e.Handled = true;
+
+            var win = Window.Current.CoreWindow;
+            win.KeyDown += SwallowBack;
+            win.KeyUp += SwallowBack;
+            // Catches the press even when focus sits inside the WebView2, which
+            // does not route gamepad input through XAML at all.
+            win.Dispatcher.AcceleratorKeyActivated += (s, e) =>
+            {
+                if (e.VirtualKey == VirtualKey.GamepadB) e.Handled = true;
+            };
+        }
+
+        private static void SwallowBack(CoreWindow sender, KeyEventArgs e)
+        {
+            if (e.VirtualKey == VirtualKey.GamepadB) e.Handled = true;
         }
 
         private async void OnLoaded(object sender, RoutedEventArgs e)

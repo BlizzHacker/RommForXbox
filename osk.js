@@ -9,17 +9,21 @@
 'use strict';
 
 const OSK = (() => {
+  // ':' has to be here — without it "host:8080" is untypeable, which is how the
+  // first console test failed. Rows may differ in length by design, so the two
+  // that carry the URL punctuation are simply wider.
   const LOWER = [
     ['1','2','3','4','5','6','7','8','9','0'],
     ['q','w','e','r','t','y','u','i','o','p'],
-    ['a','s','d','f','g','h','j','k','l','-'],
-    ['z','x','c','v','b','n','m','.','_','/'],
+    ['a','s','d','f','g','h','j','k','l',':','-'],
+    ['z','x','c','v','b','n','m','.','_','/','@'],
   ];
   const UPPER = LOWER.map((r, i) =>
-    i === 0 ? ['!','@','#','$','%','^','&','*','(',')']
+    i === 0 ? ['!','@','#','$','%','^','&','*','(',')','?','=']
             : r.map(k => k.toUpperCase()));
   const ACTIONS = [
     { label: 'Shift', act: 'shift' },
+    { label: 'http://', act: 'ins', text: 'http://' },
     { label: 'https://', act: 'ins', text: 'https://' },
     { label: ':8080', act: 'ins', text: ':8080' },
     { label: '.com', act: 'ins', text: '.com' },
@@ -97,10 +101,13 @@ const OSK = (() => {
     else if (btn === 'left') col = (col + rs[row].length - 1) % rs[row].length;
     else if (btn === 'right') col = (col + 1) % rs[row].length;
     else if (btn === 'a') return press();
-    else if (btn === 'b') { value = value.slice(0, -1); return render(''); }
-    else if (btn === 'x') { shift = !shift; }
+    // Backspace is X, not B. On Xbox the shell owns B as "back" and will close
+    // the app if anything lets it through, so B must never be load-bearing
+    // here — a dropped backspace is an annoyance, a dropped app is not.
+    else if (btn === 'x') { value = value.slice(0, -1); return render(''); }
+    else if (btn === 'y') { shift = !shift; }
     else if (btn === 'start') return submit();
-    else if (btn === 'y') { if (opts && opts.onCancel) return opts.onCancel(); return; }
+    else if (btn === 'b') { if (opts && opts.onCancel) return opts.onCancel(); return; }
     else return;
     render();
   }

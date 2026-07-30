@@ -69,6 +69,7 @@
     </Compile>
     <Compile Include="GamepadBridge.cs" />
     <Compile Include="RommProxy.cs" />
+    <Compile Include="RoutedUrl.cs" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">

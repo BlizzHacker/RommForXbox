@@ -49,12 +49,13 @@ namespace RommForXbox.Shell
         public async void OnWebResourceRequested(
             CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs args)
         {
-            if (!ShouldIntercept(args)) return;
+            var target = TargetFor(args);
+            if (target == null) return;
 
             var deferral = args.GetDeferral();
             try
             {
-                args.Response = await BuildResponse(sender, args);
+                args.Response = await BuildResponse(sender, args, target);
             }
             catch (Exception ex)
             {
@@ -66,22 +67,36 @@ namespace RommForXbox.Shell
             }
         }
 
-        private bool ShouldIntercept(CoreWebView2WebResourceRequestedEventArgs args)
+        /// <summary>
+        /// The real URL this request should be served from, or null to let
+        /// WebView2 handle it normally.
+        /// </summary>
+        private string TargetFor(CoreWebView2WebResourceRequestedEventArgs args)
         {
+            // A routed request is served natively whatever kind it is: covers are
+            // images and EmulatorJS is a script, and both come from the same
+            // possibly-http server as the API.
+            var routed = RoutedUrl.Unwrap(args.Request.Uri, _virtualHost);
+            if (routed != null) return routed;
+
+            // A direct cross-origin fetch still needs the CORS header RomM omits.
+            // Images and scripts are not CORS-checked, so they are left alone.
             if (args.ResourceContext != CoreWebView2WebResourceContext.Fetch &&
                 args.ResourceContext != CoreWebView2WebResourceContext.XmlHttpRequest)
             {
-                return false;
+                return null;
             }
 
             Uri uri;
-            if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out uri)) return false;
-            if (uri.Host.Equals(_virtualHost, StringComparison.OrdinalIgnoreCase)) return false;
-            return uri.Scheme == "http" || uri.Scheme == "https";
+            if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out uri)) return null;
+            if (uri.Host.Equals(_virtualHost, StringComparison.OrdinalIgnoreCase)) return null;
+            if (uri.Scheme != "http" && uri.Scheme != "https") return null;
+            return args.Request.Uri;
         }
 
         private async Task<CoreWebView2WebResourceResponse> BuildResponse(
-            CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs args)
+            CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs args,
+            string target)
         {
             var req = args.Request;
 
@@ -93,7 +108,7 @@ namespace RommForXbox.Shell
                     null, 204, "No Content", CorsHeaders(null));
             }
 
-            using (var outbound = new HttpRequestMessage(new HttpMethod(req.Method), req.Uri))
+            using (var outbound = new HttpRequestMessage(new HttpMethod(req.Method), target))
             {
                 if (req.Content != null && !IsBodyless(req.Method))
                 {
@@ -148,6 +163,10 @@ namespace RommForXbox.Shell
                 case "transfer-encoding":
                 case "upgrade":
                 case "content-length":
+                // Dropped so the server answers uncompressed. Forwarding it would
+                // hand the renderer gzip bytes with no Content-Encoding to explain
+                // them, because only a fixed set of headers is copied back.
+                case "accept-encoding":
                     return true;
                 default:
                     return false;
@@ -198,17 +217,22 @@ namespace RommForXbox.Shell
 
             if (resp != null)
             {
-                Copy(sb, resp.Content, "Content-Type");
-                Copy(sb, resp.Content, "Content-Length");
-                Copy(sb, resp.Content, "Content-Disposition");
+                Copy(sb, resp.Content.Headers, "Content-Type");
+                Copy(sb, resp.Content.Headers, "Content-Length");
+                Copy(sb, resp.Content.Headers, "Content-Disposition");
+                // Range matters for save-state and ROM reads that seek.
+                Copy(sb, resp.Content.Headers, "Content-Range");
+                Copy(sb, resp.Headers, "Accept-Ranges");
             }
             return sb.ToString();
         }
 
-        private static void Copy(StringBuilder sb, HttpContent content, string name)
+        private static void Copy(StringBuilder sb,
+                                 System.Net.Http.Headers.HttpHeaders headers,
+                                 string name)
         {
             System.Collections.Generic.IEnumerable<string> values;
-            if (content != null && content.Headers.TryGetValues(name, out values))
+            if (headers != null && headers.TryGetValues(name, out values))
             {
                 foreach (var v in values)
                 {

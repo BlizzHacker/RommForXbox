@@ -92,14 +92,16 @@ function setupItems() {
 function askServer() {
   OSK.open({
     title: 'RomM server address',
-    hint: 'D-pad move · A press · B backspace · X shift · Menu done',
-    value: CFG.server || 'https://',
+    hint: 'D-pad move · A press · X backspace · Y shift · Menu done',
+    // No scheme and no port needed: "192.168.1.42" is enough, and the scheme is
+    // probed. Prefilling "https://" only taught people they had to type one.
+    value: CFG.server || '',
     onSubmit: async raw => {
-      const server = CFG.normalize(raw);
-      if (!server) return OSK.setStatus('That is not a valid address.');
-      OSK.setStatus('Checking ' + server + ' …');
+      const list = CFG.candidates(raw);
+      if (!list.length) return OSK.setStatus('That is not a valid address.');
       try {
-        const { version } = await ROMM.probe(server);
+        const { server, version } = await ROMM.probeAny(
+          list, s => OSK.setStatus('Checking ' + s + ' …'));
         CFG.server = server;
         CFG.clearAuth();
         OSK.close();
@@ -108,7 +110,7 @@ function askServer() {
         setupIdx = setupItems().length - 1;
         renderSetup();
       } catch (e) {
-        OSK.setStatus(probeMessage(e, server));
+        OSK.setStatus(probeMessage(e, list[list.length - 1]));
       }
     },
     onCancel: () => { OSK.close(); show('setup'); renderSetup(''); },
@@ -138,8 +140,8 @@ function probeMessage(e, server) {
   if (e.message === 'not-romm')
     return 'Reached that address but it is not a RomM server.';
   if (e instanceof ROMM.NetError)
-    return 'Could not reach ' + server + ' — check the address and that the ' +
-           'server is online.';
+    return 'Could not reach ' + server + ' over http or https — check the ' +
+           'address, and that the console is on the same network as the server.';
   return 'Unexpected error: ' + e.message;
 }
 
@@ -240,13 +242,13 @@ async function submitPair() {
 function askCredentials() {
   OSK.open({
     title: 'RomM username',
-    hint: 'A press · B backspace · Menu done',
+    hint: 'A press · X backspace · Menu done',
     value: '',
     onSubmit: username => {
       if (!username.trim()) return OSK.setStatus('Enter your username.');
       OSK.open({
         title: 'Password for ' + username,
-        hint: 'A press · B backspace · Menu done',
+        hint: 'A press · X backspace · Menu done',
         password: true,
         value: '',
         onSubmit: async password => {
@@ -276,7 +278,9 @@ function authInput(btn) {
     authIdx = 1 - authIdx;
     return renderAuth('');
   }
-  if (btn === 'y') { show('setup'); return renderSetup(''); }
+  // B is the console's own "back" and cannot be relied on here (see osk.js), so
+  // going back to setup is Y, and deleting a digit is X.
+  if (btn === 'y' || btn === 'b') { show('setup'); return renderSetup(''); }
   if (authIdx === 1) {
     if (btn === 'a') return askCredentials();
     return;
@@ -285,7 +289,7 @@ function authInput(btn) {
   else if (btn === 'right') padIdx = (padIdx + 1) % PAD.length;
   else if (btn === 'up') padIdx = (padIdx + PAD.length - 6) % PAD.length;
   else if (btn === 'down') padIdx = (padIdx + 6) % PAD.length;
-  else if (btn === 'b') code = code.slice(0, -1);
+  else if (btn === 'x') code = code.slice(0, -1);
   else if (btn === 'a') {
     const k = PAD[padIdx];
     if (k === '←') code = code.slice(0, -1);

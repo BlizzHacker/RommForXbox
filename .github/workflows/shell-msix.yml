@@ -40,6 +40,20 @@ jobs:
           Write-Host "--- MSBuild ---"
           msbuild -version
 
+      - name: Test RoutedUrl
+        shell: pwsh
+        run: |
+          # URL unwrapping is the one piece of native logic that silently breaks
+          # everything if it is wrong, so it is kept free of WinRT types and
+          # tested on its own rather than only exercised on a console.
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $exe = Join-Path $env:RUNNER_TEMP 'routedurl-tests.exe'
+          & $csc /nologo /warn:0 /out:$exe `
+            shell\tests\RoutedUrlTests.cs shell\RommForXbox.Shell\RoutedUrl.cs
+          if ($LASTEXITCODE -ne 0) { Write-Error 'test compile failed'; exit 1 }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { Write-Error 'RoutedUrl tests failed'; exit 1 }
+
       - name: Restore
         shell: pwsh
         run: |

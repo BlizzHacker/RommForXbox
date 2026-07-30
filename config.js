@@ -13,8 +13,8 @@ const CFG = (() => {
   const get = k => localStorage.getItem(k) || '';
   const set = (k, v) => v ? localStorage.setItem(k, v) : localStorage.removeItem(k);
 
-  // "romm.example.com/" → "https://romm.example.com"; a bare host gets https
-  // because that is what a reachable-from-anywhere RomM almost always is.
+  // "romm.example.com/" → "https://romm.example.com". A scheme-less string gets
+  // https, but callers should prefer candidates() and let the scheme be probed.
   function normalize(raw) {
     let s = (raw || '').trim();
     if (!s) return '';
@@ -25,9 +25,36 @@ const CFG = (() => {
     } catch (_) { return ''; }
   }
 
-  // An https page cannot fetch an http origin — the request is blocked before
-  // it leaves the app, which otherwise surfaces as an unexplained failure.
+  // A LAN box is almost always plain http, and a box reachable from anywhere is
+  // almost always https. Guessing wrong is indistinguishable from "server not
+  // found", so when the user gives no scheme, try the likely one first and fall
+  // back — nobody should have to type "http://" to reach their own NAS.
+  function isLanHost(host) {
+    return /^(10\.|127\.|169\.254\.|192\.168\.)/.test(host)
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+        || /\.local$/i.test(host)
+        || !host.includes('.');            // a bare hostname is not on the internet
+  }
+
+  // Ordered list of full URLs to try for what the user typed.
+  function candidates(raw) {
+    const s = (raw || '').trim().replace(/\/+$/, '');
+    if (!s) return [];
+    if (/^https?:\/\//i.test(s)) {
+      const n = normalize(s);
+      return n ? [n] : [];
+    }
+    const host = s.split(/[/?#]/)[0].split(':')[0];
+    const order = isLanHost(host) ? ['http://', 'https://'] : ['https://', 'http://'];
+    return order.map(p => normalize(p + s)).filter(Boolean);
+  }
+
+  // An https page cannot fetch an http origin — the request is blocked in the
+  // renderer, which otherwise surfaces as an unexplained failure. Inside the
+  // shell this does not apply: every server request is routed through our own
+  // origin and unwrapped natively (see HOST.route).
   function mixedContentBlocked(server) {
+    if (typeof HOST !== 'undefined' && HOST.present) return false;
     return location.protocol === 'https:' && /^http:\/\//i.test(server);
   }
 
@@ -45,6 +72,7 @@ const CFG = (() => {
     clearAuth() { set(K.token, ''); set(K.refresh, ''); set(K.mode, ''); },
     reset() { for (const k of Object.values(K)) localStorage.removeItem(k); },
     normalize,
+    candidates,
     mixedContentBlocked,
   };
 })();

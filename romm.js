@@ -11,7 +11,11 @@
 'use strict';
 
 const ROMM = (() => {
-  const base = () => CFG.server;
+  // Every server URL in this file derives from base(), including the ones handed
+  // to the browser as <img src> and to EmulatorJS as EJS_pathtodata — so routing
+  // for the packaged shell happens in exactly one place. In a browser this is
+  // just CFG.server. See HOST.route for why the shell needs it.
+  const base = () => HOST.route(CFG.server);
 
   class AuthError extends Error {}
   class NetError extends Error {}
@@ -84,7 +88,7 @@ const ROMM = (() => {
     if (CFG.mixedContentBlocked(server)) throw new NetError('mixed-content');
     let r;
     try {
-      r = await fetch(server + '/api/heartbeat', { method: 'GET' });
+      r = await fetch(HOST.route(server) + '/api/heartbeat', { method: 'GET' });
     } catch (e) {
       throw new NetError(e.message || 'network');
     }
@@ -92,6 +96,26 @@ const ROMM = (() => {
     const j = await r.json().catch(() => null);
     if (!j || !j.SYSTEM || !j.SYSTEM.VERSION) throw new NetError('not-romm');
     return { version: j.SYSTEM.VERSION };
+  }
+
+  // Tries each candidate in turn and returns the first that really is a RomM,
+  // so the user can type "192.168.1.42" and not care about the scheme. The last
+  // error is kept: if nothing answers, that one describes the likeliest attempt.
+  async function probeAny(list, onTry) {
+    let last = new NetError('network');
+    for (const server of list || []) {
+      if (onTry) onTry(server);
+      try {
+        const { version } = await probe(server);
+        return { server, version };
+      } catch (e) {
+        last = e;
+        // A server that answered but is not RomM is a definite answer; trying
+        // the same host on another scheme will not change it.
+        if (e instanceof NetError && e.message === 'not-romm') throw e;
+      }
+    }
+    throw last;
   }
 
   // Pairing: RomM mints an eight-digit code for a scoped client token, so the
@@ -197,7 +221,7 @@ const ROMM = (() => {
 
   return {
     AuthError, NetError, SCOPES,
-    probe, exchangePairCode, signIn, refreshAccess,
+    probe, probeAny, exchangePairCode, signIn, refreshAccess,
     platforms, roms, coverUrl,
     emulatorJsData, romBlobUrl,
     states, putState, stateBlobUrl,
