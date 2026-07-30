@@ -70,6 +70,7 @@
     <Compile Include="GamepadBridge.cs" />
     <Compile Include="RommProxy.cs" />
     <Compile Include="RoutedUrl.cs" />
+    <Compile Include="ProxyError.cs" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">

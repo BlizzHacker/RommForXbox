@@ -69,7 +69,7 @@ namespace RommForXbox.Shell
             }
             catch (Exception ex)
             {
-                args.Response = Error(sender, "proxy failed: " + ex.Message);
+                args.Response = Error(sender, ProxyError.Describe(ex, target, HeaderTimeout));
             }
             finally
             {
@@ -152,13 +152,11 @@ namespace RommForXbox.Shell
                             outbound, HttpCompletionOption.ResponseHeadersRead,
                             cts.Token);
                     }
-                    catch (OperationCanceledException)
+                    catch (Exception ex)
                     {
-                        // Reported as a real response so the page can say which host
-                        // went quiet rather than showing a bare "Failed to fetch".
-                        return Error(sender, "no reply from " + SafeHost(target)
-                                     + " within " + (int)HeaderTimeout.TotalSeconds
-                                     + "s");
+                        // Reported as a real response so the page can name the host
+                        // and the reason, rather than showing "Failed to fetch".
+                        return Error(sender, ProxyError.Describe(ex, target, HeaderTimeout));
                     }
                     // Headers are in. Disarm the timer so streaming a large ROM body
                     // is not cut off by it.
@@ -271,14 +269,6 @@ namespace RommForXbox.Shell
                     sb.Append(name).Append(": ").Append(v).Append("\r\n");
                 }
             }
-        }
-
-        /// <summary>Host and port only — never echo a path or query into a message.</summary>
-        private static string SafeHost(string url)
-        {
-            Uri u;
-            return Uri.TryCreate(url, UriKind.Absolute, out u)
-                ? u.Scheme + "://" + u.Authority : "the server";
         }
 
         private static CoreWebView2WebResourceResponse Error(CoreWebView2 sender, string why)

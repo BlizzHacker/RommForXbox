@@ -7,7 +7,7 @@
 'use strict';
 
 const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
-const BUILD = '0.9.0.0';        // keep in step with Package.appxmanifest
+const BUILD = '0.10.0.0';        // keep in step with Package.appxmanifest
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
