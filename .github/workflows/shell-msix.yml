@@ -40,6 +40,14 @@ jobs:
           Write-Host "--- MSBuild ---"
           msbuild -version
 
+      - name: Validate EmulatorJS core names
+        shell: pwsh
+        run: |
+          # An EJS_CORES value that is not a real EmulatorJS system browses fine
+          # and fails only when the user presses A. Four were wrong at once.
+          node tests/validate_cores.js
+          if ($LASTEXITCODE -ne 0) { Write-Error 'invalid core mapping'; exit 1 }
+
       - name: Test RoutedUrl
         shell: pwsh
         run: |

@@ -10,6 +10,8 @@ const GP = (() => {
   const prev = {}, heldSince = {}, lastRepeat = {};
   let uiHandler = null;      // (btnName) => void, edge+repeat
   let rawHandler = null;     // (btnName, pressed) => void, edges only
+  let axisHandler = null;    // (axes[4]) => void, on change only
+  let axesPrev = null;
   const AXIS_DEAD = 0.45;
   const axisPrev = { up:false, down:false, left:false, right:false };
 
@@ -65,6 +67,19 @@ const GP = (() => {
         }
         axisPrev[d] = dir[d];
       }
+
+      /* Raw stick values, for the stream tier. The dpad synthesis above is what
+       * menus need, but a game with a 3D camera needs the actual axis — so this
+       * reports the full value and lets the consumer decide. Quantised to 1/100
+       * and only sent on change, or an idle stick would post 60 messages a
+       * second down the data channel. */
+      if (axisHandler) {
+        const now = [0, 1, 2, 3].map(i => Math.round((p.axes[i] || 0) * 100) / 100);
+        if (!axesPrev || now.some((v, i) => v !== axesPrev[i])) {
+          axesPrev = now;
+          axisHandler(now);
+        }
+      }
     }
     requestAnimationFrame(poll);
   }
@@ -85,6 +100,9 @@ const GP = (() => {
   return {
     onUI(fn) { uiHandler = fn; },
     onRaw(fn) { rawHandler = fn; },
+    // Pass null to stop reporting; the stream view turns this on only while it
+    // is on screen.
+    onAxes(fn) { axisHandler = fn; axesPrev = null; },
     isHeld(name) { return !!prev[name]; },
     // Called by the native host bridge, ~60 Hz. Pass null to hand control back
     // to the Gamepad API. `buttons` may be booleans or {pressed} objects.

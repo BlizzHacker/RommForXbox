@@ -13,6 +13,7 @@ let games = [], gameIdx = 0;
 const GRID_COLS = 8;          // must match grid-template-columns in style.css
 const PAGE_SIZE = 500;
 let currentGame = null, quitHold = 0, activeStateId = null, blobUrls = [];
+let hiddenGames = 0, hiddenPlatforms = 0, impossibleGames = 0;
 
 const $ = id => document.getElementById(id);
 
@@ -29,33 +30,112 @@ function releaseBlobs() {
   blobUrls = [];
 }
 
-/* EmulatorJS cores by RomM platform slug. Presence here *is* the "plays on the
- * console" decision — no server round-trip needed to know it. */
+/* RomM platform slug → EmulatorJS *system* name. Presence here is the "plays on
+ * the console itself" decision — no server round-trip needed to know it.
+ *
+ * The values are EmulatorJS system keys, NOT libretro core filenames. Getting
+ * that wrong is the worst failure mode in this app: the platform browses
+ * normally and the game only fails when the user presses A. Four of these were
+ * wrong at once — 'gbc', 'vice_x64', 'pcecd' and 'mame2003' are all plausible
+ * and none of them exist — which silently cost 1,451 games in a real library.
+ * tests/validate_cores.js checks every value against the list EmulatorJS
+ * actually ships, and runs in CI. Add nothing here without it passing.
+ *
+ * Both old and new RomM slugs are kept where RomM renamed one, so the app works
+ * against older and current servers. A missing slug is not a small thing either:
+ * an unmapped platform is hidden from the library entirely, which is how
+ * "genesis" hid ~1,900 games. */
 const EJS_CORES = {
-  nes: 'nes', famicom: 'nes', fds: 'nes', snes: 'snes', sfam: 'snes',
-  n64: 'n64', gb: 'gb', gbc: 'gbc', gba: 'gba', nds: 'nds',
-  // RomM renamed several slugs; both spellings are kept so the app works
-  // against older and current servers. Missing one is not a small thing — an
-  // unmapped platform is hidden from the library entirely, and "genesis" alone
-  // accounted for ~1,900 games that looked unplayable.
+  // Nintendo
+  nes: 'nes', famicom: 'nes', fds: 'nes',
+  snes: 'snes', sfam: 'snes', satellaview: 'snes',
+  n64: 'n64',
+  gb: 'gb', gbc: 'gb',                  // one gambatte core covers both
+  gba: 'gba',
+  nds: 'nds', 'nintendo-dsi': 'nds',
+  // Sega
   'genesis-slash-megadrive': 'segaMD', genesis: 'segaMD',
-  'turbografx-16-slash-pc-engine-cd': 'pcecd', 'turbografx-cd': 'pcecd',
-  'nintendo-dsi': 'nds', satellaview: 'snes', sg1000: 'segaMS',
-  sms: 'segaMS', gamegear: 'segaGG',
+  'sega-pico': 'segaMD',                // genesis_plus_gx handles Pico
+  sms: 'segaMS', sg1000: 'segaMS', gamegear: 'segaGG',
   sega32: 'sega32x', segacd: 'segaCD', saturn: 'segaSaturn',
-  psx: 'psx', ps: 'psx', psp: 'psp', arcade: 'arcade', mame: 'mame2003',
-  neogeoaes: 'arcade', neogeomvs: 'arcade', 'neo-geo-pocket': 'ngp',
-  'neo-geo-pocket-color': 'ngp', atari2600: 'atari2600',
-  atari5200: 'atari5200', atari7800: 'atari7800', 'atari-2600': 'atari2600',
-  lynx: 'lynx', jaguar: 'jaguar', '3do': '3do', colecovision: 'coleco',
-  'turbografx16--1': 'pce', 'turbografx-16-slash-pc-engine-cd': 'pcecd',
+  // Sony
+  psx: 'psx', ps: 'psx', psp: 'psp',
+  // Arcade / SNK
+  arcade: 'arcade', mame: 'mame',
+  neogeoaes: 'arcade', neogeomvs: 'arcade',
+  'neo-geo-pocket': 'ngp', 'neo-geo-pocket-color': 'ngp',
+  // NEC
+  'turbografx16--1': 'pce', 'turbografx-cd': 'pce',
+  'turbografx-16-slash-pc-engine-cd': 'pce', supergrafx: 'pce', pcfx: 'pcfx',
+  // Atari
+  atari2600: 'atari2600', 'atari-2600': 'atari2600',
+  atari5200: 'atari5200', atari7800: 'atari7800',
+  lynx: 'lynx', jaguar: 'jaguar',
+  // Everything else
+  '3do': '3do', colecovision: 'coleco',
   wonderswan: 'ws', 'wonderswan-color': 'ws', virtualboy: 'vb',
-  'vic-20': 'vic20', c64: 'vice_x64', amiga: 'amiga',
-  amstradcpc: 'amstradcpc', zxs: 'zx', dos: 'dos',
+  'vic-20': 'vic20', c64: 'c64', c128: 'c128', plus4: 'plus4',
+  amiga: 'amiga', 'amiga-cd32': 'amiga',   // puae runs CD32
+  dos: 'dos',
+  // Deliberately absent: ZX Spectrum and Amstrad CPC. Both were mapped to cores
+  // ('zx', 'amstradcpc') that EmulatorJS does not have, so they failed at
+  // launch. Leaving them unmapped routes them honestly instead.
 };
 
-const tierFor = slug =>
-  EJS_CORES[slug] ? 'local' : (CFG.stream ? 'stream' : 'none');
+/* Platforms a stream server can run, because a libretro core for them exists.
+ * Mirrors RETROARCH_CORES in RommStreamServer/tiers.py — keep the two in step.
+ *
+ * This list is why the tier decision is not simply "anything EmulatorJS cannot
+ * do, stream it". Switch, Wii U, Xbox and PS3 have no libretro core at all, so
+ * offering them the moment a stream server is configured produced a dead end:
+ * the platform appeared, the user pressed A, and the server answered
+ * "unplayable". */
+const STREAM_CORES = new Set([
+  'ngc', 'wii', 'dc', 'dreamcast', 'ps2', '3ds', 'new-nintendo-3ds',
+  'naomi', 'atomiswave', 'msx', 'msx2', 'vectrex', 'intellivision',
+  'sharp-x68000', 'saturn', 'psp', 'n64', 'psx', 'arcade',
+]);
+
+/* Where a platform can play:
+ *   'local'  — EmulatorJS on the console itself
+ *   'stream' — a configured stream server runs a real emulator
+ *   'server' — streamable, but no stream server is configured yet
+ *   'none'   — no emulator exists for it anywhere
+ * The last two are both unplayable today but mean different things to the user,
+ * and only one of them is fixable. */
+/* What the configured stream server says it can actually run, once asked.
+ * Null until then, in which case STREAM_CORES is the fallback guess.
+ *
+ * Asking matters because a core being *known* is not the same as it being
+ * installed and having its firmware: the server has Dreamcast and PS2 cores but
+ * no console firmware to boot them with, and a core with no firmware does not
+ * fail loudly — it draws an error screen and streams that at a healthy 30 fps.
+ * Only the server can tell. */
+let streamable = null, streamWhy = {};
+
+async function refreshStreamable() {
+  if (!CFG.stream) { streamable = null; streamWhy = {}; return; }
+  try {
+    const r = await fetch(HOST.route(CFG.stream) + '/api/play/streamable');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    streamable = new Set(j.streamable || []);
+    streamWhy = j.unavailable || {};
+  } catch (_) {
+    // An older stream server has no such endpoint; fall back to the built-in
+    // list rather than showing the user nothing.
+    streamable = null;
+    streamWhy = {};
+  }
+}
+
+function tierFor(slug) {
+  if (EJS_CORES[slug]) return 'local';
+  const canStream = streamable ? streamable.has(slug) : STREAM_CORES.has(slug);
+  if (canStream) return CFG.stream ? 'stream' : 'server';
+  if (STREAM_CORES.has(slug)) return 'server';   // possible, but not on this server
+  return 'none';
+}
 
 /* ------------------------------------------------------------------ setup */
 
@@ -313,15 +393,26 @@ async function enterLibrary() {
   show('library');
   $('lib-status').textContent = 'Loading your RomM library…';
   try {
+    // Ask the stream server what it can run before deciding tiers, or platforms
+    // it has no firmware for would be offered and then fail.
+    await refreshStreamable();
     const all = await ROMM.platforms();
-    platforms = all
-      .filter(p => p.rom_count)
-      .map(p => ({ p, tier: tierFor(p.slug) }))
-      .filter(x => x.tier !== 'none');
+    const withGames = all.filter(p => p.rom_count);
+    const rated = withGames.map(p => ({ p, tier: tierFor(p.slug) }));
+    platforms = rated.filter(x => x.tier === 'local' || x.tier === 'stream');
+    // Silently dropping platforms makes a library look smaller than it is and
+    // gives the user nothing to act on. Count what was left out, and separate
+    // "add a stream server and this works" from "nothing can run this".
+    const count = t => rated.filter(x => x.tier === t)
+      .reduce((n, x) => n + (x.p.rom_count || 0), 0);
+    hiddenGames = count('server');
+    hiddenPlatforms = rated.filter(x => x.tier === 'server').length;
+    impossibleGames = count('none');
     if (!platforms.length) {
       $('lib-status').textContent = all.length
-        ? 'None of your platforms can play here yet. Add a stream server in ' +
-          'Settings (Y) for GameCube, Wii, PS2, Saturn or Dreamcast.'
+        ? (hiddenGames
+            ? `${hiddenGames} games need a stream server — add one in Settings (Y).`
+            : 'None of your platforms can run on an Xbox.')
         : 'That RomM has no platforms with games in it yet.';
       $('lib-title').textContent = 'Library';
       $('game-grid').innerHTML = '';
@@ -359,11 +450,26 @@ async function loadGames() {
                             : `${games.length} games`) + ' · ' +
       (tier === 'local' ? 'plays on this console' : 'streams from your server');
     renderGrid();
-    $('lib-status').textContent = games.length ? '' : 'No games on this platform.';
+    $('lib-status').textContent = games.length ? footnote() : 'No games on this platform.';
   } catch (e) {
     if (e instanceof ROMM.AuthError) { CFG.clearAuth(); return enterAuth(); }
     $('lib-status').textContent = 'Could not load games: ' + e.message;
   }
+}
+
+/* What is missing from the rail, and whether the user can do anything about it.
+ * Shown once under the grid rather than per-platform: it is context, not an
+ * error, and a library that quietly omits a third of itself is worse. */
+function footnote() {
+  const bits = [];
+  if (hiddenGames) {
+    bits.push(`${hiddenGames} games on ${hiddenPlatforms} more ` +
+      `platform${hiddenPlatforms === 1 ? '' : 's'} need a stream server (Y)`);
+  }
+  if (impossibleGames) {
+    bits.push(`${impossibleGames} cannot run on an Xbox at all`);
+  }
+  return bits.join(' · ');
 }
 
 function renderRail() {
@@ -529,10 +635,14 @@ function startStream(p, g) {
   $('quit-hint').classList.remove('hidden');
   $('stream-overlay').classList.remove('hidden');
   $('stream-msg').textContent = 'Starting ' + (g.name || g.fs_name) + '…';
+  // Analog sticks only matter while a stream is on screen, and reporting them
+  // otherwise would push messages down a closed channel.
+  GP.onAxes(axes => RTC.sendAxes(axes));
   RTC.play(p.slug, g.fs_name, $('stream-video'), st => {
     if (st === 'connected') $('stream-overlay').classList.add('hidden');
     else if (String(st).startsWith('error')) $('stream-msg').textContent = st;
   }, () => {
+    GP.onAxes(null);
     if (view === 'stream') { show('library'); renderGrid(); }
   });
 }
