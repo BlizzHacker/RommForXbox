@@ -3,17 +3,38 @@
 Ten minutes, five checks. If any of them fails, **open Diagnostics and send that
 screen** — it is there so you do not have to describe the problem in words.
 
-## Install
+## Install, or update
 
 Dev Mode console, via the Xbox Device Portal:
 
 1. Console: Settings → System → Console info → Developer settings → note the
    Device Portal address (`https://<console-ip>:11443`).
 2. Browser on a PC: open that address, accept the certificate warning.
-3. **Home → Add** → upload `RommForXbox_0.7.0.0_x64_SIDELOAD.msix` →
+3. **Home → Add** → upload `RommForXbox_0.8.0.0_x64_SIDELOAD.msix` →
    **Start**.
 
 It appears under *Apps* as **RomM for Xbox**.
+
+### Already have an older build?
+
+**Just install the new one the same way — do not uninstall first.** Every build
+shares one package identity (`MOVEWEIGHT.RomMforXbox`) and the version only ever
+goes up, so a higher version replaces the lower one in place and your server
+address and sign-in are kept.
+
+**Then confirm which build you are actually running:** press **X** on the first
+screen. The top line of Diagnostics reads `Build 0.8.0.0`. If it says anything
+lower, the update did not take — the usual cause is the console still running the
+old copy, so close the app fully from the dashboard (Menu → Quit) and reopen it.
+
+If you would rather be certain than careful, uninstalling first works too and
+costs you only the server address, which takes twenty seconds to retype.
+
+> **One thing an update cannot fix by itself:** settings written by an older build
+> survive it. Builds before 0.6 saved a bare address you typed as `https://…`,
+> which is wrong for most servers on a home network. On first launch after
+> updating, this build re-checks your saved address and switches the scheme if the
+> other one answers, telling you it did so. That is expected, not a bug.
 
 ## The controls, because they are not the Xbox defaults everywhere
 

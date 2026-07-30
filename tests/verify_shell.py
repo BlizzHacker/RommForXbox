@@ -227,6 +227,49 @@ try:
     check("passwords are never written to storage", pw_key == 0, str(pw_key))
     ev("OSK.close()")
 
+    # --- upgrading from an older build must not inherit its bug ------------
+    # An app update keeps local storage. A tester upgrading from a build that
+    # forced https:// onto bare hosts would still have that stored, fail exactly
+    # as before, and report the fix as broken.
+    ev("""
+    window.__probed = [];
+    ROMM.__realProbe = ROMM.probe;
+    Object.defineProperty(ROMM, 'probe', {configurable:true, value: async u => {
+      window.__probed.push(u);
+      if (u.indexOf('http://') === 0) return {version: '4.9.0'};
+      throw new ROMM.NetError('network');     // https does not answer
+    }});
+    localStorage.setItem('romm_server', 'https://192.168.1.42');
+    localStorage.setItem('romm_token', 'tok');
+    localStorage.removeItem('romm_schema');
+    """)
+    ev("window.__note = null; migrateConfig().then(n => window.__note = n)")
+    for _ in range(20):
+        if ev("__note !== null"):
+            break
+        time.sleep(0.2)
+    check("a stale https LAN address is corrected on upgrade",
+          ev("localStorage.getItem('romm_server')") == "http://192.168.1.42",
+          str(ev("localStorage.getItem('romm_server')")))
+    check("both schemes were tried, https first",
+          ev("JSON.stringify(__probed)")
+          == '["https://192.168.1.42","http://192.168.1.42"]',
+          str(ev("JSON.stringify(__probed)")))
+    check("the sign-in is kept — same server, same token",
+          ev("localStorage.getItem('romm_token')") == "tok")
+    check("the user is told what changed",
+          "http://192.168.1.42" in str(ev("__note")), str(ev("__note")))
+    check("the migration records that it ran",
+          ev("Number(localStorage.getItem('romm_schema'))") == ev("CFG.SCHEMA"))
+    ev("window.__probed = []; migrateConfig()")
+    time.sleep(0.5)
+    check("it does not run again on later launches",
+          ev("JSON.stringify(__probed)") == "[]", str(ev("JSON.stringify(__probed)")))
+    ev("""
+    Object.defineProperty(ROMM, 'probe', {configurable:true, value: ROMM.__realProbe});
+    localStorage.removeItem('romm_server'); localStorage.removeItem('romm_token');
+    """)
+
     # --- diagnostics, so a tester reports facts ---------------------------
     ev("show('diag'); renderDiag('')")
     diag = ev("document.getElementById('diag-kv').textContent")

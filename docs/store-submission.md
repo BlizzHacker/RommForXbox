@@ -2,12 +2,12 @@
 
 Product: **9MXC51W17LH4** — `https://partner.microsoft.com/dashboard/products/9MXC51W17LH4`
 
-Upload **`RommForXbox_0.7.0.0_x64_STORE.msixupload`** — in
+Upload **`RommForXbox_0.8.0.0_x64_STORE.msixupload`** — in
 `C:\MoveWeight\STORE-SUBMIT\`, and an artifact of the `Build Xbox shell MSIX`
 workflow. `.msixupload` is the format Partner Center wants; it carries the
 framework dependencies with it.
 
-`RommForXbox_0.7.0.0_x64_SIDELOAD.msix` beside it is the Dev Mode build, for
+`RommForXbox_0.8.0.0_x64_SIDELOAD.msix` beside it is the Dev Mode build, for
 testing on a console through the Device Portal.
 
 Do **not** submit the older hosted-web-app packages (`RommForXbox_0.1.0.0` or
@@ -20,7 +20,7 @@ Identity is fixed and must not drift from the product:
 |---|---|
 | Name | `MOVEWEIGHT.RomMforXbox` |
 | Publisher | `CN=6375D74B-5E4F-45B4-B246-B29507C1332A` |
-| Version | `0.7.0.0` (raise for every resubmission — the Store rejects a repeat) |
+| Version | `0.8.0.0` (raise for every resubmission — the Store rejects a repeat) |
 | Architecture | `x64` (Xbox is x64; a C# UWP app cannot be `neutral`) |
 
 Claude cannot sign in to Partner Center or submit on your behalf. Everything
@@ -203,14 +203,14 @@ change nothing else.
 **Sideload the package and boot one game before you submit.**
 
 0.3.0.0 ran on a console and produced four bugs in the first few minutes, three
-of which only hardware could reveal. 0.7.0.0 fixes them, but the two most
+of which only hardware could reveal. 0.8.0.0 fixes them, but the two most
 important fixes — claiming the B button so it stops closing the app, and reaching
 a plain-http server on the LAN — have themselves only been verified in tests, not
 on a console.
 
 Certification runs the app on real Xbox hardware. If B still closes it, or the
 reviewer's server will not connect, that is a failed cycle and days of waiting.
-Ten minutes with `RommForXbox_0.7.0.0_x64_SIDELOAD.msix` through the Device
+Ten minutes with `RommForXbox_0.8.0.0_x64_SIDELOAD.msix` through the Device
 Portal is much cheaper.
 
 Still completely unverified anywhere: **whether EmulatorJS actually runs at

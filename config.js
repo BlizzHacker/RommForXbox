@@ -9,7 +9,13 @@ const CFG = (() => {
     // A password grant returns an access token good for only 30 minutes plus a
     // 7-day refresh token; a paired client token is long-lived and has neither.
     refresh: 'romm_refresh', mode: 'romm_auth_mode',
+    schema: 'romm_schema',
   };
+
+  // Bump when stored values need revisiting on upgrade. An app update keeps its
+  // local storage, so a setting written by an older, buggier version outlives the
+  // fix — which reads to the user as the fix not working.
+  const SCHEMA = 2;
   const get = k => localStorage.getItem(k) || '';
   const set = (k, v) => v ? localStorage.setItem(k, v) : localStorage.removeItem(k);
 
@@ -71,6 +77,16 @@ const CFG = (() => {
     set mode(v) { set(K.mode, v); },
     clearAuth() { set(K.token, ''); set(K.refresh, ''); set(K.mode, ''); },
     reset() { for (const k of Object.values(K)) localStorage.removeItem(k); },
+    SCHEMA,
+    get schema() { return Number(get(K.schema) || 0); },
+    set schema(v) { set(K.schema, String(v)); },
+    // The same host on the other scheme, for correcting a stored value.
+    otherScheme(server) {
+      const s = String(server || '');
+      if (/^https:\/\//i.test(s)) return s.replace(/^https:/i, 'http:');
+      if (/^http:\/\//i.test(s)) return s.replace(/^http:/i, 'https:');
+      return '';
+    },
     normalize,
     candidates,
     mixedContentBlocked,

@@ -7,7 +7,7 @@
 'use strict';
 
 const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
-const BUILD = '0.7.0.0';        // keep in step with Package.appxmanifest
+const BUILD = '0.8.0.0';        // keep in step with Package.appxmanifest
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
@@ -761,10 +761,45 @@ async function detectSameOrigin() {
   return '';
 }
 
+/* Correct settings written by an older build.
+ *
+ * An app update keeps its local storage, so a value stored by a buggier version
+ * outlives the fix. Specifically: before scheme probing existed, a bare host the
+ * user typed was always saved as https://, which is wrong for most servers on a
+ * LAN. A tester who updates would fail to connect exactly as before and quite
+ * reasonably report that the fix did not work — so re-check the stored address
+ * once and correct the scheme if the other one answers. */
+async function migrateConfig() {
+  if (CFG.schema >= CFG.SCHEMA) return '';
+  let note = '';
+  const stored = CFG.server;
+  if (stored) {
+    try {
+      await ROMM.probe(stored);
+    } catch (_) {
+      const alt = CFG.otherScheme(stored);
+      if (alt) {
+        try {
+          await ROMM.probe(alt);
+          CFG.server = alt;
+          // The token was issued by the same server, so it stays valid.
+          note = 'Updated your server address to ' + alt + '.';
+        } catch (_) { /* neither answers; leave it for the user to fix */ }
+      }
+    }
+  }
+  CFG.schema = CFG.SCHEMA;
+  return note;
+}
+
 (async () => {
-  if (CFG.server && CFG.token) return enterLibrary();
+  const migrated = await migrateConfig();
+  if (CFG.server && CFG.token) {
+    if (migrated) lastFailure = '';
+    return enterLibrary();
+  }
   sameOriginServer = await detectSameOrigin();
-  if (CFG.server) { renderSetup(''); return enterAuth(); }
+  if (CFG.server) { renderSetup(migrated); return enterAuth(); }
   show('setup');
-  renderSetup('');
+  renderSetup(migrated);
 })();
