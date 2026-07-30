@@ -1,5 +1,8 @@
 # RomM for Xbox
 
+A project of the [Move Weight Foundation](https://foundation.moveweight.com), a
+501(c)(3).
+
 Play your entire [RomM](https://github.com/rommapp/romm) library on **any retail
 Xbox** — no dev mode, no sideloading. Open one URL in the Xbox **Edge** browser
 and drive everything with the controller.
