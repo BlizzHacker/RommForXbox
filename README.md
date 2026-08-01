@@ -1,5 +1,7 @@
 # RomM for Xbox
 
+> A **[Cartridge](https://github.com/BlizzHacker/rom-hub/blob/master/BRAND.md)** app by MoveWeight — the play pillar. Cartridge is a self-hosted retro-gaming ecosystem. Unofficial; not affiliated with RomM, Gaseous or Retrom.
+
 Play your entire [RomM](https://github.com/rommapp/romm) library on **any retail
 Xbox** — no dev mode, no sideloading. Open one URL in the Xbox **Edge** browser
 and drive everything with the controller.
