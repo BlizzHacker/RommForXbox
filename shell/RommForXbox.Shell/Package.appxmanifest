@@ -15,9 +15,9 @@
                     PhonePublisherId="00000000-0000-0000-0000-000000000000" />
 
   <Properties>
-    <DisplayName>RomM</DisplayName>
+    <DisplayName>Cartridge — RomM for Xbox</DisplayName>
     <PublisherDisplayName>MOVE WEIGHT</PublisherDisplayName>
-    <Description>Play your own self-hosted RomM retro game library with a controller — every platform, one app.</Description>
+    <Description>Cartridge plays your self-hosted RomM library on Xbox with a controller — every platform, one app. Unofficial; not affiliated with or endorsed by the RomM project.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -35,12 +35,12 @@
                  Executable="$targetnametoken$.exe"
                  EntryPoint="RommForXbox.Shell.App">
       <uap:VisualElements
-        DisplayName="RomM"
-        Description="Play your own self-hosted RomM retro game library with a controller — every platform, one app."
+        DisplayName="Cartridge — RomM for Xbox"
+        Description="Cartridge plays your self-hosted RomM library on Xbox with a controller. Unofficial; not affiliated with the RomM project."
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
         BackgroundColor="#0B1020">
-        <uap:DefaultTile ShortName="RomM"
+        <uap:DefaultTile ShortName="Cartridge"
           Square71x71Logo="Assets\Square71x71Logo.png"
           Square310x310Logo="Assets\Square310x310Logo.png"
           Wide310x150Logo="Assets\Wide310x150Logo.png">
