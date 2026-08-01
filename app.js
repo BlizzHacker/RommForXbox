@@ -7,7 +7,7 @@
 'use strict';
 
 const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
-const BUILD = '0.10.0.0';        // keep in step with Package.appxmanifest
+const BUILD = '0.11.0.0';        // keep in step with Package.appxmanifest
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
@@ -112,26 +112,35 @@ const STREAM_CORES = new Set([
  * no console firmware to boot them with, and a core with no firmware does not
  * fail loudly — it draws an error screen and streams that at a healthy 30 fps.
  * Only the server can tell. */
-let streamable = null, streamWhy = {};
+let streamable = null, streamWhy = {}, ejsUnavailable = new Set();
 
 async function refreshStreamable() {
-  if (!CFG.stream) { streamable = null; streamWhy = {}; return; }
+  if (!CFG.stream) {
+    streamable = null; streamWhy = {}; ejsUnavailable = new Set(); return;
+  }
   try {
     const r = await fetch(HOST.route(CFG.stream) + '/api/play/streamable');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     streamable = new Set(j.streamable || []);
     streamWhy = j.unavailable || {};
+    ejsUnavailable = new Set(j.ejs_unavailable || []);
   } catch (_) {
     // An older stream server has no such endpoint; fall back to the built-in
     // list rather than showing the user nothing.
     streamable = null;
     streamWhy = {};
+    ejsUnavailable = new Set();
   }
 }
 
 function tierFor(slug) {
-  if (EJS_CORES[slug]) return 'local';
+  // EJS_CORES says a core *exists* for this platform, not that the server has
+  // downloaded it. PSP is in the table and its core is absent, so trusting the
+  // table alone sent 1,182 games to a launch that could never succeed. When the
+  // server tells us the core is missing, fall through to the stream tier, which
+  // has its own (ppsspp) core for exactly this case.
+  if (EJS_CORES[slug] && !ejsUnavailable.has(slug)) return 'local';
   const canStream = streamable ? streamable.has(slug) : STREAM_CORES.has(slug);
   if (canStream) return CFG.stream ? 'stream' : 'server';
   if (STREAM_CORES.has(slug)) return 'server';   // possible, but not on this server
