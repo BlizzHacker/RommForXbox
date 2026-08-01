@@ -482,14 +482,14 @@ function authInput(btn) {
 /* ---------------------------------------------------------------- library */
 
 async function enterLibrary() {
-  // Cartridge now hands off to RomM's own /console TV UI instead of rebuilding
-  // the library here. /console runs EmulatorJS inside this WebView2, so every
-  // system — including N64/PS1 — plays on the Xbox itself, and its controller
-  // navigation is fed by the native GamepadBridge. We just need /console to be
-  // authenticated: the native shell mirrors our RomM session cookie into the
-  // WebView (see MainPage/RommProxy), so navigating the top frame to the
-  // server's /console lands on the console, not a login form. If /console is
-  // ever unreachable we fall back to the built-in library below.
+  // Cartridge hands off to RomM's own /console TV UI instead of rebuilding the
+  // library here. /console runs EmulatorJS inside this WebView2, so every system
+  // — including N64/PS1 — plays on the Xbox itself, and its controller
+  // navigation is fed by the native GamepadBridge. /console handles its own auth:
+  // if there's no RomM session yet it shows a sign-in the user completes once
+  // with the on-screen keyboard (RomM then sets its own session cookie for the
+  // WebView's persistent profile, so subsequent launches skip it). We fall back
+  // to the built-in library only if the server is unset or forceLegacyUi is set.
   if (CFG.server && !CFG.forceLegacyUi) {
     try {
       const base = CFG.server.replace(/\/$/, '');
