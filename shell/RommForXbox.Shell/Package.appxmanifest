@@ -15,9 +15,9 @@
                     PhonePublisherId="00000000-0000-0000-0000-000000000000" />
 
   <Properties>
-    <DisplayName>RomM for Xbox</DisplayName>
+    <DisplayName>RomM</DisplayName>
     <PublisherDisplayName>MOVE WEIGHT</PublisherDisplayName>
-    <Description>Play your own self-hosted RomM retro game library on Xbox with the controller.</Description>
+    <Description>Play your own self-hosted RomM retro game library with a controller — every platform, one app.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -35,8 +35,8 @@
                  Executable="$targetnametoken$.exe"
                  EntryPoint="RommForXbox.Shell.App">
       <uap:VisualElements
-        DisplayName="RomM for Xbox"
-        Description="Play your own self-hosted RomM retro game library on Xbox with the controller."
+        DisplayName="RomM"
+        Description="Play your own self-hosted RomM retro game library with a controller — every platform, one app."
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
         BackgroundColor="#0B1020">
