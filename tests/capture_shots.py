@@ -5,8 +5,12 @@ A Store submission is rejected without at least one screenshot, and hand-cropped
 photos of a TV look like what they are. These come from the app itself at exactly
 console resolution.
 
-Usage: python3 capture_shots.py <romm-url> <username> <password> [outdir]
+Usage: python3 capture_shots.py <romm-url> [username] [password] [outdir]
+
+Credentials may instead come from ROMM_USER / ROMM_PASS, which keeps the
+password out of shell history and out of the process list.
 """
+import getpass
 import json
 import os
 import subprocess
@@ -21,8 +25,16 @@ RESOLVE = os.environ.get(
     "RESOLVE_RULES",
     "MAP romm.moveweight.com 192.168.0.197,MAP xbox.moveweight.com 192.168.0.197")
 PORT = 9338
-server, username, password = sys.argv[1], sys.argv[2], sys.argv[3]
-outdir = sys.argv[4] if len(sys.argv) > 4 else "/tmp/shots"
+
+if len(sys.argv) < 2:
+    sys.exit(__doc__.strip())
+server = sys.argv[1]
+username = (sys.argv[2] if len(sys.argv) > 2
+            else os.environ.get("ROMM_USER") or input("RomM username: "))
+password = (sys.argv[3] if len(sys.argv) > 3
+            else os.environ.get("ROMM_PASS") or getpass.getpass("RomM password: "))
+outdir = sys.argv[4] if len(sys.argv) > 4 else os.environ.get(
+    "SHOTS_DIR", "/tmp/shots")
 os.makedirs(outdir, exist_ok=True)
 
 SCOPES = ("me.read roms.read platforms.read assets.read devices.read "
