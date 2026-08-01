@@ -1,1 +1,7 @@
 dist/
+
+# UWP build outputs + local test signing cert
+shell/RommForXbox.Shell/bin/
+shell/RommForXbox.Shell/obj/
+shell/RommForXbox.Shell/AppPackages/
+shell/RommForXbox.Shell/*.pfx
