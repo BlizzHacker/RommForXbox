@@ -493,15 +493,17 @@ async function enterLibrary() {
   if (CFG.server && !CFG.forceLegacyUi) {
     try {
       const base = CFG.server.replace(/\/$/, '');
-      // Navigate to /console THROUGH the shell's proxy route, not the raw server
-      // URL: the page is served from https://app.local, so a direct http://server
-      // navigation is active mixed content and is blocked before the shell can
-      // intercept it — the very reason route() exists. HOST.route() rewrites it
-      // to the same-origin /__romm/... path the shell unwraps, keeping the secure
-      // context (WebRTC/EmulatorJS) and carrying our RomM session with it.
-      const consoleUrl = HOST.present
-        ? HOST.route(base + '/console')     // https://app.local/__romm/http/<host>/console
-        : base + '/console';                // plain browser (dev) — go direct
+      // Navigate the WHOLE page to the RomM server's /console. This must be a
+      // direct navigation to the real origin — NOT the app.local/__romm proxy —
+      // because /console is a SPA whose own asset/api URLs are relative: proxying
+      // the document would rebase them onto app.local and break the app. The
+      // per-fetch proxy (HOST.route) is only for API/XHR CORS, not page loads.
+      //
+      // A direct nav is safe when the server is https (same secure context as
+      // app.local, no mixed content). For a plain-http LAN server the native
+      // shell allows the navigation (AdditionalAllowedFrameAncestors / the
+      // WebView2 http exception set up in MainPage) so it still loads.
+      const consoleUrl = base + '/console';       // e.g. https://romm.example.com/console
       location.href = consoleUrl;
       return;
     } catch (e) { /* fall through to the built-in library */ }
