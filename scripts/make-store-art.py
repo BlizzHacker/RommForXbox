@@ -115,6 +115,31 @@ def box(size):
     return img.convert("RGB")
 
 
+def hero(w, h, titled):
+    """16:9 art. Partner Center is strict and opposite about the title here:
+    Super hero art and Featured promotional square art MUST NOT carry the
+    product name, while Branded key art and Titled hero art MUST carry it in the
+    top 3/4. Same artwork, one switch, so the set stays consistent."""
+    cols = 6 if w >= h else 3
+    img = tile_grid(gradient(w, h), cols=cols, rows=3, alpha=30)
+    if titled:
+        img = wordmark(img, top_frac=0.13, romm_frac=0.20, xbox_frac=0.095)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, w - 1, h - 1], outline=LINE + (255,),
+                width=max(2, round(min(w, h) / 220)))
+    return img.convert("RGB")
+
+
+def keyart(w, h):
+    """584x800 branded key art — portrait, title required in the top 3/4."""
+    img = tile_grid(gradient(w, h), cols=3, rows=3, alpha=26)
+    img = wordmark(img, top_frac=0.16, romm_frac=0.135, xbox_frac=0.065)
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, w - 1, h - 1], outline=LINE + (255,),
+                width=max(2, round(min(w, h) / 220)))
+    return img.convert("RGB")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     built = {
@@ -123,6 +148,14 @@ def main():
         "PosterArt_1440x2160.png": poster(1440, 2160),
         "BoxArt_1080x1080.png": box(1080),
         "BoxArt_2160x2160.png": box(2160),
+        # Title FORBIDDEN on these two.
+        "SuperHeroArt_1920x1080_NOTITLE.png": hero(1920, 1080, titled=False),
+        "SuperHeroArt_3840x2160_NOTITLE.png": hero(3840, 2160, titled=False),
+        "FeaturedPromoSquare_1080x1080_NOTITLE.png": hero(1080, 1080,
+                                                          titled=False),
+        # Title REQUIRED on these two.
+        "TitledHeroArt_1920x1080_TITLED.png": hero(1920, 1080, titled=True),
+        "BrandedKeyArt_584x800_TITLED.png": keyart(584, 800),
     }
     for name, img in built.items():
         path = OUT / name
