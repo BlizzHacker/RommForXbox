@@ -113,28 +113,23 @@ namespace RommForXbox.Shell
         /// <summary>
         /// The real URL this request should be served from, or null to let
         /// WebView2 handle it normally.
+        ///
+        /// Only explicitly __romm-routed requests are served natively. Direct
+        /// cross-origin fetches used to be intercepted as well, to attach the
+        /// CORS header RomM omits on nginx-served paths, but on the Xbox
+        /// WebView2 a CreateWebResourceResponse with a body stream is never
+        /// delivered to the renderer (error responses with a null body are),
+        /// so a successful native fetch left the page waiting forever. Direct
+        /// fetches now go out through the renderer itself, which works
+        /// whenever the server (or the proxy in front of it) sends CORS
+        /// headers; RomM's API reflects the caller's origin already.
         /// </summary>
         private string TargetFor(CoreWebView2WebResourceRequestedEventArgs args)
         {
             // A routed request is served natively whatever kind it is: covers are
             // images and EmulatorJS is a script, and both come from the same
             // possibly-http server as the API.
-            var routed = RoutedUrl.Unwrap(args.Request.Uri, _virtualHost);
-            if (routed != null) return routed;
-
-            // A direct cross-origin fetch still needs the CORS header RomM omits.
-            // Images and scripts are not CORS-checked, so they are left alone.
-            if (args.ResourceContext != CoreWebView2WebResourceContext.Fetch &&
-                args.ResourceContext != CoreWebView2WebResourceContext.XmlHttpRequest)
-            {
-                return null;
-            }
-
-            Uri uri;
-            if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out uri)) return null;
-            if (uri.Host.Equals(_virtualHost, StringComparison.OrdinalIgnoreCase)) return null;
-            if (uri.Scheme != "http" && uri.Scheme != "https") return null;
-            return args.Request.Uri;
+            return RoutedUrl.Unwrap(args.Request.Uri, _virtualHost);
         }
 
         private async Task<CoreWebView2WebResourceResponse> BuildResponse(
