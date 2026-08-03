@@ -148,6 +148,23 @@ namespace RommForXbox.Shell
                 }
             };
 
+            // Inject the bridge into EVERY document, not just the packaged
+            // pages that load it as a script tag: play happens on RomM's own
+            // /console pages after a real navigation, where EmulatorJS polls
+            // navigator.getGamepads() and, without this, sees no controller at
+            // all (a tester got Donkey Kong on screen with dead controls).
+            // host-bridge.js is double-load safe.
+            try
+            {
+                var bridge = File.ReadAllText(Path.Combine(webRoot, "host-bridge.js"));
+                await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
+            }
+            catch (Exception)
+            {
+                // The packaged pages still load their own copy; only the
+                // server-side pages lose the controller if this fails.
+            }
+
             core.WebMessageReceived += OnWebMessageReceived;
             core.NavigationCompleted += (s, a) =>
             {

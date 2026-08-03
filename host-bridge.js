@@ -15,7 +15,12 @@
  */
 'use strict';
 
-const HOST = (() => {
+/* Loaded twice by design: as a script tag by the packaged pages, and injected
+ * by the shell into EVERY document (AddScriptToExecuteOnDocumentCreated) so
+ * the controller also reaches RomM's own /console pages, where EmulatorJS
+ * polls navigator.getGamepads() and would otherwise see nothing. var plus the
+ * window.HOST reuse makes the second load a no-op. */
+var HOST = window.HOST || (() => {
   const wv = window.chrome && window.chrome.webview;
 
   return {
@@ -58,8 +63,11 @@ const HOST = (() => {
     },
   };
 })();
+window.HOST = HOST;
 
 (() => {
+  if (window.__cartridgeBridgeWired) return;
+  window.__cartridgeBridgeWired = true;
   const wv = window.chrome && window.chrome.webview;
   if (!wv) return;                      // plain browser — Gamepad API is fine
 
@@ -117,5 +125,7 @@ const HOST = (() => {
   // should not bother pumping state.
   try { wv.postMessage({ t: 'ready' }); } catch (_) { /* not fatal */ }
 
-  document.documentElement.classList.add('host-shell');
+  // Injected copies run at document-create, where documentElement can be
+  // absent; the class is cosmetic, so never let it break the bridge.
+  try { document.documentElement.classList.add('host-shell'); } catch (_) { }
 })();
