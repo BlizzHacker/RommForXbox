@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- .NET Native runtime directives.
+
+     Release builds are compiled ahead of time by .NET Native, which strips
+     reflection metadata for anything it cannot prove is used. XAML activates
+     page and control types THROUGH COM at runtime, so without directives that
+     metadata is gone and activation throws NotSupportedException (0x80131515)
+     inside combase.dll before any UI appears: the app dies at the splash.
+
+     That is exactly what every console crash dump for this shell and for the
+     Cryptic Realm shell (same architecture, same omission) showed. The file
+     must be registered in the csproj as a Content item; None and RdXmlFile are
+     both silently ignored by the UWP .NET Native targets, and CI asserts on
+     ILT0027 to catch that.
+
+     "Required All" keeps every member of the application assembly reflectable.
+     It costs package size and is the standard template default; being precise
+     here is an optimisation, and an app that will not start is not one. -->
+<Directives xmlns="http://schemas.microsoft.com/netfx/2013/01/metadata">
+  <Application>
+    <Assembly Name="*Application*" Dynamic="Required All" />
+  </Application>
+</Directives>

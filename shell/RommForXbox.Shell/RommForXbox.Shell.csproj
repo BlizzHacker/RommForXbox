@@ -78,6 +78,9 @@
     </AppxManifest>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Properties\Default.rd.xml" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="Assets\SplashScreen.png" />
     <Content Include="Assets\Square44x44Logo.png" />
     <Content Include="Assets\Square71x71Logo.png" />

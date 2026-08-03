@@ -85,7 +85,22 @@ jobs:
             /p:UapAppxPackageBuildMode=StoreUpload `
             /p:AppxPackageSigningEnabled=false `
             /p:GenerateAppInstallerFile=false `
-            /v:minimal /consoleloggerparameters:Summary
+            /v:minimal /consoleloggerparameters:Summary 2>&1 | Tee-Object -FilePath build.log
+
+      - name: Fail if .NET Native has no runtime directives
+        shell: pwsh
+        run: |
+          # ILT0027 means ILC compiled with NO runtime directives, which strips
+          # the reflection metadata XAML needs to activate types through COM.
+          # That crashes the app at the splash with NotSupportedException
+          # (0x80131515), and it is only a warning, so assert on the compiler
+          # output rather than on the rd.xml file existing: an rd.xml wired up
+          # with the wrong item type is silently ignored and looks identical.
+          $log = Get-Content build.log -Raw -ErrorAction SilentlyContinue
+          if ($log -and $log -match 'ILT0027') {
+            Write-Error 'ILT0027: runtime directives were not picked up'
+            exit 1
+          }
 
       - name: Locate output
         id: out
