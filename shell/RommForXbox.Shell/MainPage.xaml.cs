@@ -134,6 +134,20 @@ namespace RommForXbox.Shell
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += _proxy.OnWebResourceRequested;
 
+            // The console's WebView2 maps a controller gesture to history
+            // back and forward, which yanks the page out from under the user
+            // mid-game (a tester's right stick paged between the app and the
+            // server's sign-in). Nothing in this app ever navigates through
+            // history on purpose, so cancel every such navigation. RomM's own
+            // web UI routes in-page (pushState), which this does not touch.
+            core.NavigationStarting += (s, a) =>
+            {
+                if (a.NavigationKind == CoreWebView2NavigationKind.BackOrForward)
+                {
+                    a.Cancel = true;
+                }
+            };
+
             core.WebMessageReceived += OnWebMessageReceived;
             core.NavigationCompleted += (s, a) =>
             {

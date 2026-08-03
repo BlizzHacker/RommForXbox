@@ -367,7 +367,18 @@ function setupInput(btn) {
 /* ------------------------------------------------------------------- auth */
 
 let authIdx = 0, code = '', padIdx = 0;
-const PAD = ['1','2','3','4','5','6','7','8','9','0','←','OK'];
+// RomM mints ALPHANUMERIC pair codes (for example H9Y6-K7G7), so a digits-only
+// pad locked every real code out. Six keys per row: the up/down math below
+// steps by 6.
+const PAD = [
+  'A','B','C','D','E','F',
+  'G','H','I','J','K','L',
+  'M','N','O','P','Q','R',
+  'S','T','U','V','W','X',
+  'Y','Z','0','1','2','3',
+  '4','5','6','7','8','9',
+  '←','OK',
+];
 
 function enterAuth() {
   show('auth');
@@ -388,8 +399,9 @@ function renderAuth(status) {
   $('auth-pair').classList.toggle('hidden', authIdx !== 0);
   $('auth-creds').classList.toggle('hidden', authIdx !== 1);
   if (authIdx === 0) {
+    const disp = code + '········'.slice(code.length);
     $('pair-code').textContent =
-      (code + '········'.slice(code.length)).split('').join(' ');
+      (disp.slice(0, 4) + '-' + disp.slice(4)).split('').join(' ');
     const pad = $('pair-pad');
     pad.innerHTML = '';
     PAD.forEach((k, i) => {
@@ -403,10 +415,21 @@ function renderAuth(status) {
 }
 
 async function submitPair() {
-  if (code.length !== 8) return renderAuth('Enter all eight digits.');
+  if (code.length !== 8) return renderAuth('Enter all eight characters.');
   renderAuth('Pairing with RomM…');
+  // RomM displays the code as XXXX-XXXX; whether the exchange endpoint wants
+  // the dash is not worth guessing, so try bare first and retry dashed.
+  const bare = code.toUpperCase();
+  const dashed = bare.slice(0, 4) + '-' + bare.slice(4);
   try {
-    CFG.token = await ROMM.exchangePairCode(code);
+    let token;
+    try {
+      token = await ROMM.exchangePairCode(bare);
+    } catch (e) {
+      if (!(e instanceof ROMM.AuthError)) throw e;
+      token = await ROMM.exchangePairCode(dashed);
+    }
+    CFG.token = token;
     CFG.refresh = '';
     CFG.mode = 'client';          // long-lived; nothing to refresh
     enterLibrary();
