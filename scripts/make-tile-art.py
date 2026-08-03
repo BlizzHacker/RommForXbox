@@ -64,19 +64,19 @@ def tile_page(w, h, kind, scale=2):
         body = f'<div class="padwrap" style="width:86%">{GAMEPAD_SVG}</div>'
     elif kind == "tile":
         body = f"""
-        <div class="mark"><div class="romm" style="font-size:{H * 0.17}px">RomM</div></div>
+        <div class="mark"><div class="romm" style="font-size:{H * 0.08}px">Cartridge</div></div>
         <div class="padwrap" style="width:74%;bottom:9%">{GAMEPAD_SVG}</div>"""
     elif kind == "wide":
         body = f"""
         <div class="row">
-          <div class="romm" style="font-size:{H * 0.30}px">RomM</div>
+          <div class="romm" style="font-size:{H * 0.141}px">Cartridge</div>
           <div class="padwrap-inline" style="width:38%">{GAMEPAD_SVG}</div>
         </div>"""
     else:  # splash
         body = f"""
         <div class="row">
           <div>
-            <div class="romm" style="font-size:{H * 0.26}px">RomM</div>
+            <div class="romm" style="font-size:{H * 0.122}px">Cartridge</div>
             <div class="tag" style="font-size:{H * 0.055}px">FOR&nbsp;XBOX</div>
           </div>
           <div class="padwrap-inline" style="width:34%">{GAMEPAD_SVG}</div>

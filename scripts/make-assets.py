@@ -56,11 +56,11 @@ def stacked(w, h, romm_frac=0.30, xbox_frac=0.15, border=True):
     img, d = plate(w, h, border)
     fr, fx = font(round(h * romm_frac)), font(round(h * xbox_frac))
     gap = h * 0.06
-    rh = d.textbbox((0, 0), "RomM", font=fr)[3] - d.textbbox((0, 0), "RomM", font=fr)[1]
+    rh = d.textbbox((0, 0), "Cartridge", font=fr)[3] - d.textbbox((0, 0), "Cartridge", font=fr)[1]
     xh = d.textbbox((0, 0), "XBOX", font=fx)[3] - d.textbbox((0, 0), "XBOX", font=fx)[1]
     total = rh + gap + xh
     top = (h - total) / 2
-    centred(d, (0, top, w, top + rh), "RomM", fr, ACCENT)
+    centred(d, (0, top, w, top + rh), "Cartridge", fr, ACCENT)
     centred(d, (0, top + rh + gap, w, top + total), "XBOX", fx, GOOD)
     return img
 
@@ -69,11 +69,11 @@ def inline(w, h):
     """'RomM XBOX' side by side — the wide tile."""
     img, d = plate(w, h)
     fr, fx = font(round(h * 0.40)), font(round(h * 0.24))
-    wr = d.textbbox((0, 0), "RomM", font=fr)[2] - d.textbbox((0, 0), "RomM", font=fr)[0]
+    wr = d.textbbox((0, 0), "Cartridge", font=fr)[2] - d.textbbox((0, 0), "Cartridge", font=fr)[0]
     wx = d.textbbox((0, 0), "XBOX", font=fx)[2] - d.textbbox((0, 0), "XBOX", font=fx)[0]
     gap = w * 0.04
     x0 = (w - (wr + gap + wx)) / 2
-    centred(d, (x0, 0, x0 + wr, h), "RomM", fr, ACCENT)
+    centred(d, (x0, 0, x0 + wr, h), "Cartridge", fr, ACCENT)
     centred(d, (x0 + wr + gap, 0, x0 + wr + gap + wx, h), "XBOX", fx, GOOD)
     return img
 

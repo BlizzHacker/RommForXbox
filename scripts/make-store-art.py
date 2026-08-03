@@ -163,7 +163,7 @@ def page(w, h, titled, pad_scale, word_vh, cards_n,
     fonts = fetch_fonts()
     wordmark = "" if not titled else f"""
     <div class="mark" style="top:{word_vh}%">
-      <div class="romm">RomM</div>
+      <div class="romm">Cartridge</div>
       <div class="tag">FOR&nbsp;XBOX</div>
     </div>"""
     return f"""<!doctype html><meta charset="utf-8"><style>
@@ -224,7 +224,7 @@ html,body {{ width:{w}px; height:{h}px; overflow:hidden; background:#070b18 }}
 
 /* wordmark */
 .mark {{ position:absolute; left:0; right:0; text-align:center }}
-.romm {{ font:900 { round(h * 0.155) }px/1 'Orbitron';
+.romm {{ font:900 { round(h * 0.073) }px/1 'Orbitron';
   letter-spacing:.02em; color:#dff3ff;
   background:linear-gradient(180deg,#ffffff 0%,#a5e3ff 45%,#59b8e8 100%);
   -webkit-background-clip:text; background-clip:text; color:transparent;
