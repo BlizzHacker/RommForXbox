@@ -34,11 +34,19 @@ const HOST = (() => {
      *
      * The target stays readable path segments so that relative joining still
      * works — EmulatorJS appends its own filenames to whatever base it is given.
+     *
+     * https targets are NOT rewritten: on the Xbox shell WebResourceRequested
+     * never fires (the UWP WebView2 does not deliver it), so a routed request
+     * lands on the packaged origin's 404 instead of the proxy. An https server
+     * is reachable directly — RomM's API reflects the caller's Origin — and the
+     * direct path is also faster, so the proxy is reserved for the http case
+     * it alone can solve (and which only works where the event fires).
      */
     route(url) {
       if (!wv || !url) return url;
       const m = /^(https?):\/\/([^/?#]+)(.*)$/i.exec(url);
       if (!m) return url;
+      if (m[1].toLowerCase() === 'https') return url;
       return location.origin + '/__romm/' + m[1].toLowerCase() + '/' + m[2] + m[3];
     },
 
