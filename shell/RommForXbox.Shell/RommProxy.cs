@@ -56,19 +56,52 @@ namespace RommForXbox.Shell
             return c;
         }
 
+        // Diagnostic trail readable off the console via the Device Portal file
+        // API. Bounded so a long browse session cannot grow it without limit.
+        private static int _logLines;
+        internal static void Log(string s)
+        {
+            if (System.Threading.Interlocked.Increment(ref _logLines) > 400) return;
+            try
+            {
+                var f = Path.Combine(ApplicationData.Current.LocalFolder.Path, "proxy.log");
+                File.AppendAllText(
+                    f, DateTime.UtcNow.ToString("HH:mm:ss.fff") + " " + s + "\r\n");
+            }
+            catch (Exception) { }
+        }
+
+        private static bool _sawFirstRequest;
+
         public async void OnWebResourceRequested(
             CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs args)
         {
+            if (!_sawFirstRequest)
+            {
+                _sawFirstRequest = true;
+                Log("HANDLER-ALIVE first request: " + args.Request.Uri);
+            }
             var target = TargetFor(args);
-            if (target == null) return;
+            if (target == null)
+            {
+                var u = args.Request.Uri ?? string.Empty;
+                if (u.IndexOf("/__romm/", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Log("UNWRAP-MISS " + u);
+                }
+                return;
+            }
 
+            Log("PROXY " + args.Request.Method + " " + target);
             var deferral = args.GetDeferral();
             try
             {
                 args.Response = await BuildResponse(sender, args, target);
+                Log("PROXY-DONE " + target);
             }
             catch (Exception ex)
             {
+                Log("PROXY-FAIL " + target + " : " + ex.GetType().Name + " " + ex.Message);
                 args.Response = Error(sender, ProxyError.Describe(ex, target, HeaderTimeout));
             }
             finally
@@ -156,6 +189,11 @@ namespace RommForXbox.Shell
                     {
                         // Reported as a real response so the page can name the host
                         // and the reason, rather than showing "Failed to fetch".
+                        Log("SEND-FAIL " + target + " : " + ex.GetType().Name + " " + ex.Message
+                            + (ex.InnerException != null
+                               ? " | inner " + ex.InnerException.GetType().Name + " "
+                                 + ex.InnerException.Message
+                               : string.Empty));
                         return Error(sender, ProxyError.Describe(ex, target, HeaderTimeout));
                     }
                     // Headers are in. Disarm the timer so streaming a large ROM body
