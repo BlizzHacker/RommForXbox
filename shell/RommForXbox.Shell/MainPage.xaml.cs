@@ -41,8 +41,14 @@ namespace RommForXbox.Shell
             // was not enough on hardware, so claim B at the earliest stage too.
             // The page owns B — it arrives through GamepadBridge like any other
             // button — and asks to leave explicitly, via {"t":"exit"}.
-            var nav = SystemNavigationManager.GetForCurrentView();
-            nav.BackRequested += (s, e) => e.Handled = true;
+            // Guarded: another legacy view API, and losing the extra B-claim is
+            // survivable where dying at the splash is not.
+            try
+            {
+                var nav = SystemNavigationManager.GetForCurrentView();
+                nav.BackRequested += (s, e) => e.Handled = true;
+            }
+            catch (Exception) { }
 
             var win = Window.Current.CoreWindow;
             win.KeyDown += SwallowBack;
