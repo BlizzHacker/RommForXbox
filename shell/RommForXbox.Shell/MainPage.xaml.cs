@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Microsoft.Web.WebView2.Core;
 using Windows.ApplicationModel;
+using Windows.Storage;
 using Windows.System;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
@@ -97,13 +98,31 @@ namespace RommForXbox.Shell
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            // Edge DevTools remote debugging over the Device Portal. On in a
+            // Debug build, and in a Release build ONLY when a marker file is
+            // dropped into LocalState by an operator on a dev console. A shipped
+            // Store package never has the marker, so retail stays undebuggable;
+            // this lets us attach a debugger to a release-identical binary on
+            // hardware without shipping a separate debug package (whose CoreCLR
+            // framework the console does not carry). Must be set before the
+            // CoreWebView2 is created.
+            var debugOn = false;
 #if DEBUG
-            // Lets Edge DevTools attach over the Xbox Device Portal. Must be set
-            // before the CoreWebView2 is created.
-            Environment.SetEnvironmentVariable(
-                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-                "--enable-features=msEdgeDevToolsWdpRemoteDebugging");
+            debugOn = true;
 #endif
+            try
+            {
+                if (File.Exists(Path.Combine(
+                        ApplicationData.Current.LocalFolder.Path, "cartridge-devtools")))
+                    debugOn = true;
+            }
+            catch (Exception) { }
+            if (debugOn)
+            {
+                Environment.SetEnvironmentVariable(
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                    "--enable-features=msEdgeDevToolsWdpRemoteDebugging");
+            }
             try
             {
                 await Web.EnsureCoreWebView2Async();
