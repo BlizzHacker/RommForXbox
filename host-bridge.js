@@ -26,33 +26,31 @@ var HOST = window.HOST || (() => {
   return {
     get present() { return !!wv; },
 
-    /* Rewrites a server URL to the same-origin path the shell unwraps.
-     *
-     * The packaged page is served from https://app.local so it stays a secure
-     * context (WebRTC needs one). That leaves a plain-http RomM — which is what
-     * most self-hosted boxes on a LAN are — unreachable: an https page fetching
-     * http:// is active mixed content, blocked inside the renderer before the
-     * host could intercept it. Routing through our own origin sidesteps both
-     * that and CORS.
-     *
-     *   http://192.168.1.42/api/roms  ->  <origin>/__romm/http/192.168.1.42/api/roms
-     *
-     * The target stays readable path segments so that relative joining still
-     * works — EmulatorJS appends its own filenames to whatever base it is given.
-     *
-     * https targets are NOT rewritten: on the Xbox shell WebResourceRequested
-     * never fires (the UWP WebView2 does not deliver it), so a routed request
-     * lands on the packaged origin's 404 instead of the proxy. An https server
-     * is reachable directly — RomM's API reflects the caller's Origin — and the
-     * direct path is also faster, so the proxy is reserved for the http case
-     * it alone can solve (and which only works where the event fires).
-     */
-    route(url) {
-      if (!wv || !url) return url;
-      const m = /^(https?):\/\/([^/?#]+)(.*)$/i.exec(url);
-      if (!m) return url;
-      if (m[1].toLowerCase() === 'https') return url;
-      return location.origin + '/__romm/' + m[1].toLowerCase() + '/' + m[2] + m[3];
+    /* The URL a request should actually be sent to. Left unchanged now: https
+     * goes direct (RomM reflects our Origin), and http goes through fetch()
+     * below via the native bridge, so nothing needs rewriting. Kept as an
+     * identity function because callers and EmulatorJS pass base URLs through
+     * it and append their own paths. */
+    route(url) { return url; },
+
+    // True when a URL must be fetched by native code rather than the renderer:
+    // inside the shell, a plain-http URL is active mixed content and the
+    // renderer blocks it before any script runs. https is always direct.
+    needsNative(url) {
+      return !!wv && /^http:\/\//i.test(String(url || ''));
+    },
+
+    /* fetch() the renderer can rely on for any RomM URL. https resolves to the
+     * platform fetch (direct, fast, streaming). http on the console is handed
+     * to native code, which has no mixed-content rule, and the full response
+     * comes back over the web-message channel as a Response-like object. This
+     * is the ONLY http path; the dead WebResourceRequested proxy is gone. */
+    fetch(url, opts) {
+      if (this.needsNative(url)) return nativeFetch(url, opts || {});
+      // Prefer the unwrapped fetch when the http-shim installed one, so an
+      // https call is not re-inspected; fall back to plain fetch otherwise.
+      const f = (window.fetch && window.fetch.__cartOriginal) || window.fetch;
+      return f.call(window, url, opts);
     },
 
     // Ask the shell to close. The console's back gesture is suppressed so B
@@ -64,6 +62,123 @@ var HOST = window.HOST || (() => {
   };
 })();
 window.HOST = HOST;
+
+/* Native fetch RPC: post {t:'nfetch',...}, resolve when the matching
+ * {t:'nfetchResult', id} message arrives. Returns a Promise of a Response-like
+ * object with the methods RomM's client and EmulatorJS use. The shell caps the
+ * body (24MB) so this is for the JSON API, pairing, cores, and cartridge-sized
+ * ROMs; disc images exceed the cap and are served from the https stream server.
+ */
+var nativeFetch = window.__cartNativeFetch || (() => {
+  const wv = window.chrome && window.chrome.webview;
+  const pending = new Map();
+  let seq = 0;
+
+  if (wv) {
+    wv.addEventListener('message', e => {
+      const m = e.data;
+      if (!m || m.t !== 'nfetchResult') return;
+      const p = pending.get(m.id);
+      if (!p) return;
+      pending.delete(m.id);
+      p(m);
+    });
+  }
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64 || '');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function makeResponse(msg) {
+    const bytes = msg.ok ? b64ToBytes(msg.bodyBase64) : new Uint8Array(0);
+    const headers = new Headers();
+    if (msg.headers) for (const k in msg.headers) {
+      try { headers.set(k, msg.headers[k]); } catch (_) { /* forbidden header */ }
+    }
+    const status = msg.ok ? (msg.status || 200) : 0;
+    return {
+      ok: msg.ok && status >= 200 && status < 300,
+      status,
+      statusText: msg.statusText || '',
+      headers,
+      url: msg.url || '',
+      redirected: false,
+      // The shell attaches a machine reason on failure; RomM's client reads it
+      // to explain DNS vs TLS vs refused instead of a bare "Failed to fetch".
+      nativeReason: msg.ok ? null : (msg.reason || 'error'),
+      nativeDetail: msg.ok ? null : (msg.detail || ''),
+      async arrayBuffer() { return bytes.buffer.slice(0); },
+      async blob() {
+        return new Blob([bytes], { type: headers.get('content-type') || '' });
+      },
+      async text() { return new TextDecoder().decode(bytes); },
+      async json() { return JSON.parse(new TextDecoder().decode(bytes)); },
+      clone() { return makeResponse(msg); },
+    };
+  }
+
+  return function nativeFetch(url, opts) {
+    const wv2 = window.chrome && window.chrome.webview;
+    if (!wv2) return Promise.reject(new TypeError('no native host'));
+    const id = 'nf' + (++seq) + '_' + Date.now();
+    const o = opts || {};
+    const headers = {};
+    if (o.headers) {
+      if (o.headers instanceof Headers) o.headers.forEach((v, k) => { headers[k] = v; });
+      else if (Array.isArray(o.headers)) o.headers.forEach(([k, v]) => { headers[k] = v; });
+      else for (const k in o.headers) headers[k] = o.headers[k];
+    }
+    const msg = {
+      t: 'nfetch', id, url: String(url), method: (o.method || 'GET').toUpperCase(),
+      headers,
+      body: typeof o.body === 'string' ? o.body : '',
+      contentType: headers['Content-Type'] || headers['content-type'] || 'application/json',
+    };
+    return new Promise((resolve, reject) => {
+      pending.set(id, m => {
+        if (m.ok || typeof m.status === 'number') resolve(makeResponse(m));
+        else {
+          const err = new TypeError(m.detail || 'native fetch failed');
+          err.nativeReason = m.reason || 'error';
+          reject(err);
+        }
+      });
+      try { wv2.postMessage(msg); }
+      catch (err) { pending.delete(id); reject(err); }
+      // Safety net: the shell always replies, but never hang forever.
+      setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id);
+          const err = new TypeError('native fetch timed out');
+          err.nativeReason = 'timeout';
+          reject(err);
+        }
+      }, 20000);
+    });
+  };
+})();
+window.__cartNativeFetch = nativeFetch;
+
+/* EmulatorJS fetches cores and ROM bytes with its own window.fetch calls, which
+ * we do not route. On a plain-http server those are mixed-content-blocked. So
+ * inside the shell, wrap window.fetch: http URLs go native, everything else is
+ * untouched. Installed once; https servers never hit the native branch. */
+(() => {
+  const wv = window.chrome && window.chrome.webview;
+  if (!wv || window.fetch.__cartWrapped) return;
+  const orig = window.fetch.bind(window);
+  const wrapped = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (/^http:\/\//i.test(url)) return nativeFetch(url, init || {});
+    return orig(input, init);
+  };
+  wrapped.__cartWrapped = true;
+  wrapped.__cartOriginal = orig;
+  window.fetch = wrapped;
+})();
 
 (() => {
   if (window.__cartridgeBridgeWired) return;

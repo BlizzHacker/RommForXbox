@@ -7,7 +7,16 @@
 'use strict';
 
 const VIEWS = ['setup', 'auth', 'osk', 'library', 'local', 'stream', 'diag'];
-const BUILD = '0.12.0.0';        // keep in step with Package.appxmanifest
+// The shell injects window.__CARTRIDGE_VERSION (the real installed package
+// version) and __CARTRIDGE_BUILD (git SHA + date) before any page script, so
+// diagnostics cannot drift from what is actually installed the way a hardcoded
+// constant did. In a plain browser neither exists; fall back to a dev marker.
+const BUILD = (typeof window !== 'undefined' && window.__CARTRIDGE_VERSION)
+  || 'dev';
+const BUILD_SHA = (typeof window !== 'undefined' && window.__CARTRIDGE_BUILD
+  && window.__CARTRIDGE_BUILD.sha) || '';
+const BUILD_DATE = (typeof window !== 'undefined' && window.__CARTRIDGE_BUILD
+  && window.__CARTRIDGE_BUILD.date) || '';
 let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
@@ -243,16 +252,43 @@ function askStream() {
   });
 }
 
+// One clear sentence per failure class, so the setup screen never falls back to
+// a bare "Failed to fetch". The reason tag comes from romm.js (which carries the
+// native bridge's classification of dns/tls/refused/timeout).
 function probeMessage(e, server) {
-  if (e.message === 'mixed-content')
-    return 'This app is served over HTTPS, so it cannot reach an http:// ' +
-           'server. Use an https:// address for your RomM.';
-  if (e.message === 'not-romm')
-    return 'Reached that address but it is not a RomM server.';
-  if (e instanceof ROMM.NetError)
-    return 'Could not reach ' + server + ' over http or https — check the ' +
-           'address, and that the console is on the same network as the server.';
-  return 'Unexpected error: ' + e.message;
+  const reason = (e && e.reason) || (e && e.message) || '';
+  switch (reason) {
+    case 'mixed-content':
+      return 'This app is served over HTTPS and cannot reach an http:// server ' +
+             'from the page. On the console the app fetches http servers ' +
+             'natively, so this only happens in a plain browser: use an https:// ' +
+             'address there.';
+    case 'not-romm':
+      return 'That address answered, but it is not a RomM server. Check you ' +
+             'used the RomM address (not, say, your router or another app).';
+    case 'dns':
+      return 'That hostname could not be found (DNS). Check the spelling, or ' +
+             'try the server\'s IP address instead.';
+    case 'tls':
+      return 'The server\'s HTTPS certificate could not be trusted. If it uses a ' +
+             'self-signed certificate, reach it by http on the LAN, or install a ' +
+             'real certificate.';
+    case 'refused':
+      return 'The server refused the connection. Check the port, and that RomM ' +
+             'is running and listening on that address.';
+    case 'timeout':
+      return 'The server did not respond in time. Check it is on and reachable ' +
+             'from this console\'s network.';
+    case 'too-large':
+      return 'The server responded but the download was too large for the http ' +
+             'bridge. Use an https address for large content.';
+    default:
+      if (/^http-/.test(reason))
+        return 'The server answered with ' + reason.replace('http-', 'HTTP ') +
+               '. Check the address and that RomM is healthy.';
+      return 'Could not reach ' + server + '. Check the address, the port, and ' +
+             'that this console is on the same network as the server.';
+  }
 }
 
 // RomM hands ROM downloads to nginx with X-Accel-Redirect and serves /assets
@@ -285,22 +321,37 @@ function noteFailure(what, e) {
   lastFailure = what + ': ' + ((e && e.message) || e || 'unknown');
 }
 
+function gamepadSummary() {
+  const pads = (navigator.getGamepads ? [...navigator.getGamepads()] : [])
+    .filter(Boolean);
+  if (GP.usingHost) {
+    const p = pads[0];
+    return 'via native host' + (p ? ' (' + p.id + ')' : '');
+  }
+  if (pads.length) return 'via Gamepad API (' + pads[0].id + ')';
+  return 'not detected';
+}
+
 async function renderDiag(status) {
+  const server = CFG.server || '';
   const rows = [
-    ['Build', BUILD],
+    ['Build', BUILD + (BUILD_SHA ? ' (' + BUILD_SHA + ')' : '')
+      + (BUILD_DATE ? ' ' + BUILD_DATE : '')],
     ['Running in', HOST.present ? 'Xbox app (native host)' : 'browser'],
-    ['Controller', GP.usingHost ? 'via native host'
-      : ((navigator.getGamepads ? [...navigator.getGamepads()] : [])
-          .filter(Boolean).length ? 'via Gamepad API' : 'not detected')],
-    ['RomM server', CFG.server || 'not set'],
+    ['Native http bridge', HOST.present
+      ? (window.__cartNativeFetch ? 'ready' : 'missing') : 'n/a'],
+    ['Controller', gamepadSummary()],
+    ['Gamepads seen', String((navigator.getGamepads
+      ? [...navigator.getGamepads()] : []).filter(Boolean).length)],
+    ['RomM server', server || 'not set'],
+    ['Reaches server by', server
+      ? (HOST.needsNative && HOST.needsNative(server) ? 'native http bridge'
+         : 'direct ' + (/^https/i.test(server) ? 'https' : 'http')) : '—'],
     ['Signed in', CFG.token ? 'yes (' + (CFG.mode || 'client') + ')' : 'no'],
     ['Stream server', CFG.stream || 'none'],
     ['Playable platforms', platforms.length ? String(platforms.length) : '—'],
     ['Last failure', lastFailure || 'none'],
   ];
-  if (HOST.present && CFG.server) {
-    rows.splice(4, 0, ['Requests routed as', HOST.route(CFG.server)]);
-  }
   const dl = $('diag-kv');
   dl.innerHTML = '';
   for (const [k, v] of rows) {

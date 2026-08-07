@@ -154,6 +154,22 @@ namespace RommForXbox.Shell
             // navigator.getGamepads() and, without this, sees no controller at
             // all (a tester got Donkey Kong on screen with dead controls).
             // host-bridge.js is double-load safe.
+            // Authoritative build identity, injected before anything else on
+            // EVERY document (packaged pages and RomM's /console pages alike).
+            // The package version cannot go stale the way a hardcoded JS
+            // constant did; a build-stamp file adds the git SHA and date.
+            try
+            {
+                var v = Package.Current.Id.Version;
+                var version = string.Format("{0}.{1}.{2}.{3}", v.Major, v.Minor, v.Build, v.Revision);
+                var stamp = string.Empty;
+                var stampPath = Path.Combine(webRoot, "build-stamp.js");
+                if (File.Exists(stampPath)) stamp = File.ReadAllText(stampPath);
+                await core.AddScriptToExecuteOnDocumentCreatedAsync(
+                    "window.__CARTRIDGE_VERSION = '" + version + "';\n" + stamp);
+            }
+            catch (Exception) { }
+
             try
             {
                 var bridge = File.ReadAllText(Path.Combine(webRoot, "host-bridge.js"));
@@ -212,6 +228,17 @@ namespace RommForXbox.Shell
                 // has to be possible without the Guide button.
                 _pads.Stop();
                 Application.Current.Exit();
+            }
+            else if (json.Contains("\"nfetch\""))
+            {
+                // A plain-http LAN request the renderer cannot make itself.
+                // Performed natively and replied over the same channel.
+                Windows.Data.Json.JsonObject obj;
+                if (Windows.Data.Json.JsonObject.TryParse(json, out obj)
+                    && obj.GetNamedString("t", string.Empty) == "nfetch")
+                {
+                    var _ = NativeFetch.Handle(sender, obj);
+                }
             }
         }
     }

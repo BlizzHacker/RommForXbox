@@ -18,7 +18,19 @@ const ROMM = (() => {
   const base = () => HOST.route(CFG.server);
 
   class AuthError extends Error {}
-  class NetError extends Error {}
+  // reason is a machine tag ('dns'|'tls'|'refused'|'timeout'|'network'|
+  // 'mixed-content'|'not-romm'|'too-large') the setup screen turns into a
+  // specific sentence instead of a bare "Failed to fetch".
+  class NetError extends Error {
+    constructor(message, reason) { super(message); this.reason = reason || message; }
+  }
+
+  // Turn a caught renderer/native error into a NetError that keeps its cause.
+  function netError(e) {
+    if (e instanceof NetError) return e;
+    const reason = (e && e.nativeReason) ? e.nativeReason : 'network';
+    return new NetError((e && e.message) || 'network', reason);
+  }
 
   // RomM's own scope names. There is no states.* scope — save states are
   // assets, and asking for a scope that does not exist fails the whole grant
@@ -36,10 +48,10 @@ const ROMM = (() => {
   async function req(path, opts = {}, retried = false) {
     const server = base();
     if (!server) throw new NetError('No server configured');
-    if (CFG.mixedContentBlocked(server)) throw new NetError('mixed-content');
+    if (CFG.mixedContentBlocked(server)) throw new NetError('mixed-content', 'mixed-content');
     let r;
     try {
-      r = await fetch(server + path, {
+      r = await HOST.fetch(server + path, {
         ...opts,
         headers: {
           ...(CFG.token ? { Authorization: 'Bearer ' + CFG.token } : {}),
@@ -47,14 +59,7 @@ const ROMM = (() => {
         },
       });
     } catch (e) {
-      throw new NetError(e.message || 'network');
-    }
-    // The native host answers 502 with X-Proxy-Error when it could not reach the
-    // server on the page's behalf. Surfacing it turns "Failed to fetch" into
-    // something a tester can actually report.
-    if (r.status === 502) {
-      const why = r.headers.get('x-proxy-error');
-      if (why) throw new NetError('host could not reach the server: ' + why);
+      throw netError(e);
     }
     if (r.status === 401 || r.status === 403) {
       // A 30-minute access token will expire mid-session; refresh once and
@@ -69,12 +74,12 @@ const ROMM = (() => {
   async function refreshAccess() {
     if (CFG.mode !== 'password' || !CFG.refresh) return false;
     try {
-      const r = await fetch(base() + '/api/token', {
+      const r = await HOST.fetch(base() + '/api/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'refresh_token', refresh_token: CFG.refresh,
-        }),
+        }).toString(),
       });
       if (!r.ok) return false;
       const j = await r.json();
@@ -92,16 +97,16 @@ const ROMM = (() => {
   // Unauthenticated: probes that a URL really is a RomM server before we
   // store it, and tells the setup screen which sign-in routes exist.
   async function probe(server) {
-    if (CFG.mixedContentBlocked(server)) throw new NetError('mixed-content');
+    if (CFG.mixedContentBlocked(server)) throw new NetError('mixed-content', 'mixed-content');
     let r;
     try {
-      r = await fetch(HOST.route(server) + '/api/heartbeat', { method: 'GET' });
+      r = await HOST.fetch(HOST.route(server) + '/api/heartbeat', { method: 'GET' });
     } catch (e) {
-      throw new NetError(e.message || 'network');
+      throw netError(e);
     }
-    if (!r.ok) throw new NetError('HTTP ' + r.status);
+    if (!r.ok) throw new NetError('HTTP ' + r.status, 'http-' + r.status);
     const j = await r.json().catch(() => null);
-    if (!j || !j.SYSTEM || !j.SYSTEM.VERSION) throw new NetError('not-romm');
+    if (!j || !j.SYSTEM || !j.SYSTEM.VERSION) throw new NetError('not-romm', 'not-romm');
     return { version: j.SYSTEM.VERSION };
   }
 
@@ -126,14 +131,14 @@ const ROMM = (() => {
     throw last;
   }
 
-  // Pairing: RomM mints an eight-digit code for a scoped client token, so the
+  // Pairing: RomM mints an alphanumeric code for a scoped client token, so the
   // app never handles the account password.
   async function exchangePairCode(code) {
-    const r = await fetch(base() + '/api/client-tokens/exchange', {
+    const r = await HOST.fetch(base() + '/api/client-tokens/exchange', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
-    }).catch(e => { throw new NetError(e.message || 'network'); });
+    }).catch(e => { throw netError(e); });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.raw_token) throw new AuthError('pair-failed');
     return j.raw_token;
@@ -147,11 +152,11 @@ const ROMM = (() => {
     const body = new URLSearchParams({
       grant_type: 'password', username, password, scope: SCOPES,
     });
-    const r = await fetch(base() + '/api/token', {
+    const r = await HOST.fetch(base() + '/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    }).catch(e => { throw new NetError(e.message || 'network'); });
+      body: body.toString(),
+    }).catch(e => { throw netError(e); });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.access_token) throw new AuthError(j.detail || 'signin-failed');
     return { token: j.access_token, refresh: j.refresh_token || '' };

@@ -67,6 +67,19 @@ jobs:
           & $exe
           if ($LASTEXITCODE -ne 0) { Write-Error 'shell logic tests failed'; exit 1 }
 
+      - name: Generate build stamp
+        shell: pwsh
+        run: |
+          # The authoritative version comes from the manifest at runtime; this
+          # adds the git SHA and build date so diagnostics can name the exact
+          # bits. Written into web/ so it ships inside the package and the shell
+          # can inject it into RomM's /console pages too.
+          $sha = (git rev-parse --short HEAD)
+          $date = (Get-Date -Format 'yyyy-MM-dd')
+          $js = "window.__CARTRIDGE_BUILD = { sha: '$sha', date: '$date' };"
+          Set-Content -Path 'build-stamp.js' -Value $js -Encoding utf8
+          Write-Host "build stamp: $sha $date"
+
       - name: Restore
         shell: pwsh
         run: |
@@ -153,7 +166,46 @@ jobs:
           $fams = $m.Package.Dependencies.TargetDeviceFamily | ForEach-Object { $_.Name }
           Write-Host ("device families: " + ($fams -join ', '))
           if ($fams -notcontains 'Windows.Xbox') { Write-Error 'Xbox family missing'; exit 1 }
+          if (-not (Test-Path (Join-Path $dest 'web\build-stamp.js'))) {
+            Write-Error 'build-stamp.js missing from package'; exit 1
+          }
+          if (-not (Test-Path (Join-Path $dest 'web\NativeFetch.cs'))) { } # not shipped, fine
           Write-Host 'package validated'
+
+      # A Debug configuration build enables the WebView2 DevTools remote
+      # debugging bridge over the Device Portal (the #if DEBUG block in
+      # MainPage). Used only for on-console inspection, never shipped; the
+      # Release package above is the store/hardware-final artifact.
+      - name: Build Debug MSIX (CDP-enabled, test only)
+        shell: pwsh
+        run: |
+          msbuild shell\RommForXbox.Shell\RommForXbox.Shell.csproj `
+            /p:Configuration=Debug `
+            /p:Platform=x64 `
+            /p:AppxBundle=Never `
+            /p:UapAppxPackageBuildMode=SideloadOnly `
+            /p:AppxPackageSigningEnabled=false `
+            /p:GenerateAppInstallerFile=false `
+            /v:minimal /consoleloggerparameters:Summary
+
+      - name: Stage Debug package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path out\debug -Force | Out-Null
+          $dbg = Get-ChildItem -Recurse -Filter *.msix -Path shell |
+                 Where-Object { $_.FullName -like '*Debug*' -and $_.FullName -like '*_Test*' } |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($dbg) {
+            Copy-Item $dbg.FullName 'out\debug\Cartridge-DEBUG.msix'
+            Write-Host ("debug: {0:N0} bytes" -f $dbg.Length)
+          } else { Write-Host 'no debug package (non-fatal)' }
+
+      - name: Upload debug package
+        uses: actions/upload-artifact@v4
+        with:
+          name: RommForXbox-debug-msix
+          path: out/debug/*.msix
+          if-no-files-found: warn
 
       - name: Upload package
         uses: actions/upload-artifact@v4

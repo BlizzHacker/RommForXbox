@@ -3,16 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RomM for Xbox</title>
+<title>Cartridge</title>
 <link rel="stylesheet" href="style.css">
+<!-- Build identity (git SHA/date). The shell also injects the real package
+     version as window.__CARTRIDGE_VERSION before this runs. -->
+<script src="build-stamp.js"></script>
 </head>
 <body>
 <!-- First run / settings -->
 <div id="view-setup" class="view">
-  <h1>RomM for Xbox</h1>
-  <p class="lede">Play your own <b>RomM</b> retro game library on this console
-    with the controller. RomM is self-hosted software you run yourself — this
-    app is a client for it and stores nothing of its own.</p>
+  <h1>Cartridge</h1>
+  <p class="lede">Play your own self-hosted game library on this console with the
+    controller. Cartridge is a client for a <b>RomM</b> server you run yourself
+    (part of the same ecosystem as Gaseous and Retrom); it ships no games and
+    stores nothing of its own.</p>
   <dl class="kv">
     <dt>RomM server</dt><dd id="setup-server">not set</dd>
     <dt>Stream server</dt><dd id="setup-stream">none (optional)</dd>
@@ -42,8 +46,8 @@
 
   <div id="auth-pair">
     <p class="hint">In RomM on a phone or PC: <b>Settings → Client API
-      Tokens → Add</b>, choose <b>Pair</b>, then type the eight-digit code
-      here.</p>
+      Tokens → Add</b>, choose <b>Pair</b>, then type the code (letters and
+      numbers, shown as XXXX-XXXX) here.</p>
     <div id="pair-code"></div>
     <div id="pair-pad"></div>
   </div>
