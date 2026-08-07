@@ -67,6 +67,15 @@ jobs:
           & $exe
           if ($LASTEXITCODE -ne 0) { Write-Error 'shell logic tests failed'; exit 1 }
 
+      - name: Test connect + error-mapping logic (Node)
+        shell: pwsh
+        run: |
+          # Pins candidate ordering, native-vs-direct routing, network-error
+          # classification, and the per-reason setup messages, so the connect
+          # matrix fails CI rather than a user's console.
+          node shell/tests/bridge-logic.test.mjs
+          if ($LASTEXITCODE -ne 0) { Write-Error 'bridge logic tests failed'; exit 1 }
+
       - name: Generate build stamp
         shell: pwsh
         run: |
