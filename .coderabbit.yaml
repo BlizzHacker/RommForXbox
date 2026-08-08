@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+language: en-US
+tone_instructions: >-
+  Be direct; skip praise and preamble. This is a packaged Xbox/UWP shell
+  hosting emulator cores. Prioritize input-handling correctness, navigation
+  lock-in risks, and mixed-content/CORS breakage over style.
+early_access: false
+enable_free_tier: true
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: true
+  abort_on_close: true
+
+  slop_detection:
+    enabled: true
+    label: slop
+
+  path_filters:
+    - "!**/*.min.js"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/node_modules/**"
+    - "!**/*.lock"
+    - "!**/vendor/**"
+    - "!**/__pycache__/**"
+
+  path_instructions:
+    - path: "**/*.{js,html}"
+      instructions: >-
+        This shell runs on a TV with only a gamepad. There is no mouse and no
+        keyboard, so any interaction path that cannot be reached or dismissed
+        with a controller strands the user in a dead screen with no way back.
+        Flag focus traps, dialogs without a controller-reachable dismiss, and
+        any handler that consumes the B/back button without providing an exit.
+
+        The page is served over https while many user library servers are plain
+        http. Mixed-content blocking silently hides those servers rather than
+        erroring visibly, so flag any new fetch or asset load that assumes the
+        target is https.
+
+        Emulator core names are load-bearing: an invalid core name fails only at
+        runtime, for that platform, with no build-time signal. Treat changes to
+        core-name mapping as needing explicit verification per platform.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Check for unpinned third-party actions, secrets exposed to
+        pull_request_target, and steps interpolating untrusted PR text into run
+        blocks.
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    ignore_usernames:
+      - dependabot
+      - dependabot[bot]
+
+  tools:
+    eslint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    actionlint:
+      enabled: true
+    languagetool:
+      enabled: false
+
+chat:
+  art: false
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
