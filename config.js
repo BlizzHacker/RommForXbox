@@ -10,6 +10,12 @@ const CFG = (() => {
     // 7-day refresh token; a paired client token is long-lived and has neither.
     refresh: 'romm_refresh', mode: 'romm_auth_mode',
     schema: 'romm_schema',
+    // Opt-in: hand the whole page to RomM's own /console web UI instead of the
+    // built-in library. Off by default, because /console runs on the server's
+    // origin with cookie auth and so asks the user to sign in AGAIN after they
+    // already paired here (the "it keeps asking me to log in" complaint). The
+    // built-in library reuses the pairing token and never leaves app.local.
+    webui: 'romm_use_webui',
   };
 
   // Bump when stored values need revisiting on upgrade. An app update keeps its
@@ -75,6 +81,8 @@ const CFG = (() => {
     set refresh(v) { set(K.refresh, v); },
     get mode() { return get(K.mode); },          // 'password' | 'client'
     set mode(v) { set(K.mode, v); },
+    get useRommWebUi() { return get(K.webui) === '1'; },
+    set useRommWebUi(v) { set(K.webui, v ? '1' : ''); },
     clearAuth() { set(K.token, ''); set(K.refresh, ''); set(K.mode, ''); },
     reset() { for (const k of Object.values(K)) localStorage.removeItem(k); },
     SCHEMA,

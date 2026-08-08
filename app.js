@@ -190,6 +190,13 @@ function setupItems() {
   items.push({ label: 'Set stream server (optional)',
     sub: 'adds GameCube / Wii / PS2 / Dreamcast via RommStreamServer',
     go: askStream });
+  items.push({
+    label: 'Library UI: ' + (CFG.useRommWebUi ? "RomM's web console" : 'built-in'),
+    sub: CFG.useRommWebUi
+      ? "uses RomM's own TV UI (signs in again on the server)"
+      : 'browse and play here, no second sign-in',
+    go: () => { CFG.useRommWebUi = !CFG.useRommWebUi; renderSetup(''); },
+  });
   if (CFG.server) items.push({ label: 'Continue', sub: 'sign in to ' + CFG.server,
     go: () => enterAuth() });
   return items;
@@ -556,15 +563,13 @@ function authInput(btn) {
 /* ---------------------------------------------------------------- library */
 
 async function enterLibrary() {
-  // Cartridge hands off to RomM's own /console TV UI instead of rebuilding the
-  // library here. /console runs EmulatorJS inside this WebView2, so every system
-  // — including N64/PS1 — plays on the Xbox itself, and its controller
-  // navigation is fed by the native GamepadBridge. /console handles its own auth:
-  // if there's no RomM session yet it shows a sign-in the user completes once
-  // with the on-screen keyboard (RomM then sets its own session cookie for the
-  // WebView's persistent profile, so subsequent launches skip it). We fall back
-  // to the built-in library only if the server is unset or forceLegacyUi is set.
-  if (CFG.server && !CFG.forceLegacyUi) {
+  // Default: the built-in library, which reuses the token established here and
+  // never leaves app.local, so the user is not asked to sign in a second time.
+  // Opt-in (Settings): hand the whole page to RomM's own /console web UI. That
+  // path is richer but runs on the server's origin with its own cookie auth, so
+  // it re-prompts for a RomM login even after pairing here — which read as the
+  // app being broken. It stays available for anyone who prefers RomM's UI.
+  if (CFG.server && CFG.useRommWebUi) {
     try {
       const base = CFG.server.replace(/\/$/, '');
       // Navigate the WHOLE page to the RomM server's /console. This must be a
