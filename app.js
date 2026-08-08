@@ -821,6 +821,41 @@ async function startLocal(p, g) {
   };
   s.onload = () => overlay.classList.add('hidden');
   document.body.appendChild(s);
+
+  // EmulatorJS detects the pad but only assigns it to a player on its own
+  // 'connected' event, and only once its control-settings labels exist. The
+  // native (host) controller is present from the very first frame, so that
+  // event fires before those labels are built and the pad is left detected but
+  // unassigned: gamepadSelection stays empty, so not one button reaches the
+  // running game. That is the "controller does nothing once a game loads" bug.
+  // Bind the first pad to player 1 as soon as the emulator and the pad are
+  // both live.
+  bindHostPadToPlayerOne();
+}
+
+// Poll until EmulatorJS and a pad are both up, then, if EmulatorJS has not
+// already claimed the pad for a player, claim it for player 1. Only ever fills
+// an EMPTY slot, so a player who reassigns controllers in EmulatorJS's own
+// settings is never overridden. Self-terminating: it stops on the first
+// successful bind, when local play ends, or after a bounded wait.
+function bindHostPadToPlayerOne() {
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    try {
+      const e = window.EJS_emulator;
+      const gp = e && e.gamepad;
+      const pad = gp && gp.gamepads && gp.gamepads[0];
+      if (e && pad && Array.isArray(e.gamepadSelection)) {
+        if (!e.gamepadSelection[0]) {
+          e.gamepadSelection[0] = pad.id + '_' + pad.index;
+          if (typeof e.updateGamepadLabels === 'function') e.updateGamepadLabels();
+        }
+        clearInterval(iv);
+      }
+    } catch (_) { /* keep polling until the emulator is up */ }
+    if (view !== 'local' || tries > 150) clearInterval(iv);
+  }, 100);
 }
 
 function startStream(p, g) {
