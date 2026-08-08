@@ -22,29 +22,46 @@ namespace RommForXbox.Shell
     internal sealed class GamepadBridge
     {
         private CoreWebView2 _web;
-        private bool _running;
+        private bool _looping;
+        private bool _posting;
         private string _lastPayload;
         private bool _lastConnected;
 
         public void Start(CoreWebView2 web)
         {
-            if (_running) return;
             _web = web;
-            _running = true;
+            _posting = true;
+            // Force a fresh full payload after any pause: the page may have been
+            // reloaded (host-bridge starts from a blank pad) or told to release
+            // everything, so "same as the last thing I sent" proves nothing.
+            _lastPayload = null;
+            _lastConnected = false;
+            if (_looping) return;
+            _looping = true;
             // Driven off the compositor rather than a timer: it is already the
             // ~60 Hz the page polls at, and it stops while suspended.
             CompositionTarget.Rendering += OnRendering;
         }
 
+        /// <summary>
+        /// Pause feeding the page without tearing the loop down. The page is
+        /// told the pad disconnected so nothing stays latched: a stick frozen
+        /// at its last deflection otherwise keeps scrolling or moving forever
+        /// after the feed dies (crash, reload, exit).
+        /// </summary>
         public void Stop()
         {
-            if (!_running) return;
-            CompositionTarget.Rendering -= OnRendering;
-            _running = false;
+            if (!_posting) return;
+            _posting = false;
+            _lastPayload = null;
+            _lastConnected = false;
+            Post("{\"t\":\"pad\",\"connected\":false}");
         }
 
         private void OnRendering(object sender, object e)
         {
+            if (!_posting || _web == null) return;
+
             var pad = Gamepad.Gamepads.FirstOrDefault();
             if (pad == null)
             {
@@ -118,6 +135,7 @@ namespace RommForXbox.Shell
 
         private void Post(string json)
         {
+            if (_web == null) return;
             try
             {
                 _web.PostWebMessageAsJson(json);
@@ -125,8 +143,11 @@ namespace RommForXbox.Shell
             catch (Exception)
             {
                 // The WebView can be torn down between frames; input is not worth
-                // taking the app down for.
-                Stop();
+                // taking the app down for. Pause the feed only; the page's next
+                // "ready" message re-arms it via Start.
+                _posting = false;
+                _lastPayload = null;
+                _lastConnected = false;
             }
         }
     }

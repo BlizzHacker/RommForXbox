@@ -211,15 +211,56 @@ namespace RommForXbox.Shell
                     Status.Text = "The app failed to load (" + a.WebErrorStatus + ").";
                 }
             };
-            core.ProcessFailed += (s, a) =>
-            {
-                Status.Visibility = Visibility.Visible;
-                Status.Text = "The web runtime stopped (" + a.ProcessFailedKind + "). "
-                            + "Close and reopen RomM for Xbox.";
-            };
+            core.ProcessFailed += (s, a) => OnProcessFailed(core, a);
 
             Web.Source = new Uri("https://" + VirtualHost + "/index.html");
             Web.Focus(FocusState.Programmatic);
+        }
+
+        // Bounded crash recovery. Consoles kill the WebView2 render process far
+        // more readily than desktops (tight app memory budgets), and the old
+        // handler turned every such death into a dead end: a permanent banner
+        // over a page whose controller state was frozen at the last-held input.
+        // Render and GPU deaths now reload the app in place; the page posts
+        // "ready" when it is back, which restarts the pad feed cleanly.
+        private int _recoveries;
+        private DateTime _recoveryWindow = DateTime.MinValue;
+
+        private void OnProcessFailed(CoreWebView2 core, CoreWebView2ProcessFailedEventArgs a)
+        {
+            // Neutralize page input first so nothing stays latched mid-crash.
+            _pads.Stop();
+
+            if (a.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+            {
+                Status.Visibility = Visibility.Visible;
+                Status.Text = "The app runtime closed. Please reopen Cartridge.";
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            if ((now - _recoveryWindow).TotalMinutes > 5)
+            {
+                _recoveryWindow = now;
+                _recoveries = 0;
+            }
+            if (++_recoveries > 3)
+            {
+                Status.Visibility = Visibility.Visible;
+                Status.Text = "The app keeps crashing on this console. Please close Cartridge and reopen it.";
+                return;
+            }
+
+            Status.Visibility = Visibility.Visible;
+            Status.Text = "Recovering...";
+            try
+            {
+                core.Reload();
+            }
+            catch (Exception)
+            {
+                Status.Text = "The app could not recover. Please reopen Cartridge.";
+            }
         }
 
         private void OnWebMessageReceived(CoreWebView2 sender,
