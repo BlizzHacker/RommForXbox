@@ -185,7 +185,9 @@ namespace RommForXbox.Shell
                 var stampPath = Path.Combine(webRoot, "build-stamp.js");
                 if (File.Exists(stampPath)) stamp = File.ReadAllText(stampPath);
                 await core.AddScriptToExecuteOnDocumentCreatedAsync(
-                    "window.__CARTRIDGE_VERSION = '" + version + "';\n" + stamp);
+                    "window.__CARTRIDGE_VERSION = '" + version + "';\n"
+                    + "window.__CARTRIDGE_DEVTOOLS = " + (debugOn ? "true" : "false") + ";\n"
+                    + stamp);
             }
             catch (Exception) { }
 

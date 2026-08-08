@@ -243,4 +243,33 @@ window.__cartNativeFetch = nativeFetch;
   // Injected copies run at document-create, where documentElement can be
   // absent; the class is cosmetic, so never let it break the bridge.
   try { document.documentElement.classList.add('host-shell'); } catch (_) { }
+
+  // Dev-only live controller overlay (marker-gated via __CARTRIDGE_DEVTOOLS).
+  // Present on EVERY page including the play screen, so a tester can see the
+  // pad register in real time next to the game reacting. Never shown in a
+  // shipped Store build (no marker -> flag false). Purely additive; if anything
+  // here throws it must not touch the input path.
+  try {
+    if (window.__CARTRIDGE_DEVTOOLS && !window.__cartPadOverlay) {
+      window.__cartPadOverlay = true;
+      const add = () => {
+        if (!document.body) return void requestAnimationFrame(add);
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:2147483647;'
+          + 'font:12px/1.4 monospace;color:#7fe3a1;background:rgba(0,0,0,.6);'
+          + 'padding:4px 8px;border-radius:6px;pointer-events:none;white-space:pre';
+        document.body.appendChild(el);
+        setInterval(() => {
+          const p = (navigator.getGamepads ? [...navigator.getGamepads()] : [])
+            .filter(Boolean)[0];
+          if (!p) { el.textContent = 'pad: none'; return; }
+          const pressed = p.buttons.map((b, i) => b.pressed ? i : -1)
+            .filter(i => i >= 0).join(',');
+          const ax = p.axes.map(a => a.toFixed(1)).join(' ');
+          el.textContent = 'pad ok  btn[' + pressed + ']  ax ' + ax;
+        }, 100);
+      };
+      add();
+    }
+  } catch (_) { /* diagnostics must never break input */ }
 })();

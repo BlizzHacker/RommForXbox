@@ -149,12 +149,19 @@ namespace RommForXbox.Shell
         {
             var text = Flatten(ex).ToLowerInvariant();
             if (text.Contains("no such host") || text.Contains("name or service")
-                || text.Contains("getaddrinfo") || text.Contains("could not be resolved"))
+                || text.Contains("getaddrinfo") || text.Contains("could not be resolved")
+                || text.Contains("name could not be resolved")
+                || text.Contains("server name or address could not be resolved"))
                 return "dns";
             if (text.Contains("ssl") || text.Contains("secure channel")
                 || text.Contains("certificate") || text.Contains("tls"))
                 return "tls";
-            if (text.Contains("actively refused") || text.Contains("refused"))
+            // Xbox/WinHTTP wording for a closed port / no listener is
+            // "A connection with the server could not be established", not the
+            // desktop "actively refused". Cover both.
+            if (text.Contains("actively refused") || text.Contains("refused")
+                || text.Contains("connection with the server could not be established")
+                || text.Contains("cannot connect") || text.Contains("could not be established"))
                 return "refused";
             return "network";
         }
