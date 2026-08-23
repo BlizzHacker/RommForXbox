@@ -114,7 +114,12 @@ junk entries at the head of each list).
 > http servers too. When something does go wrong, the app now names the actual
 > reason instead of guessing.
 
-**Why 0.27 matters** — 0.26 and every version before it could not play a single
+**0.27.0.0 was built and then withdrawn before submission** — an adversarial
+review found it suppressed the cross-origin hint for https-in-shell users, who
+are the one cohort that hint is correct for. 0.28 is the first shippable build
+of this work; nothing numbered 0.27 should ever reach a console.
+
+**Why this release matters** — 0.26 and every version before it could not play a single
 game from an `http://192.168.x.x` RomM, which is the most common way people run
 one. The failure looked like a server misconfiguration, so the people it hit
 went and changed working servers. See
