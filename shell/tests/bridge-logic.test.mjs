@@ -27,10 +27,16 @@ assert.deepEqual(candidates('nas'),
   ['http://nas', 'https://nas'], 'bare hostname is treated as LAN');
 
 // --- needsNative (mirrors host-bridge.js) ---
-const needsNative = (hasHost, url) => !!hasHost && /^http:\/\//i.test(String(url || ''));
+// The rule is mixed content, not the scheme alone: an http URL is only blocked
+// in the renderer when the page itself is secure. shell/tests/native-fetch.test.mjs
+// exercises the real implementation; this pins the decision table.
+const needsNative = (hasHost, url, pageProtocol = 'https:') =>
+  !!hasHost && /^http:\/\//i.test(String(url || '')) && pageProtocol === 'https:';
 assert.equal(needsNative(true, 'http://192.168.1.50:8080'), true, 'http in shell -> native');
 assert.equal(needsNative(true, 'https://romm.example.com'), false, 'https in shell -> direct');
 assert.equal(needsNative(false, 'http://192.168.1.50'), false, 'browser never native');
+assert.equal(needsNative(true, 'http://192.168.1.50/api/roms', 'http:'), false,
+  'an http page (RomM /console) reaches its own server directly');
 
 // --- native error classification (mirrors NativeFetch.ClassifyNetworkError) ---
 function classify(text) {

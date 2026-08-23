@@ -36,6 +36,36 @@ discards it. Cover art still appears because `<img>` is not CORS-checked.
 it does not. The app detects this and says so, rather than surfacing a bare
 "Failed to fetch".
 
+**This applies to the browser only.** Inside the installed Xbox app there is no
+cross-origin rule to break: the page is packaged, and every request to a
+plain-http server is performed by native code, which CORS does not apply to. The
+app used to show the cross-origin hint on the console too — its check was a bare
+`server.origin !== location.origin`, which is true for *every* server once the
+page is served from `https://app.local` — so a user whose server was working
+correctly was told to go and add headers to a proxy. It now reports the reason
+the transfer actually failed.
+
+### The console's real constraint: an https page cannot load http subresources
+
+The packaged page has to be https (a secure context, for WebRTC). That makes
+every plain-http URL it references *mixed content*, which Chromium blocks inside
+the renderer — before `WebResourceRequested` or any script of ours could see the
+request. Which mechanisms that hits is not obvious, and it decides the design:
+
+| How the app asks for it | On a plain-http server |
+|---|---|
+| `fetch()` | wrapped in `host-bridge.js` → native bridge |
+| `XMLHttpRequest` | wrapped in `host-bridge.js` → native bridge |
+| `<script src>` (EmulatorJS `loader.js`, `emulator.min.js`) | **blocked** — fetched natively and injected as a `blob:` URL |
+| `<link rel=stylesheet>` (`emulator.min.css`) | **blocked** — same, via `EJS_paths` |
+| `<img src>` (cover art) | auto-upgraded to https, then **blocked** when that fails — re-fetched natively on `error` |
+
+EmulatorJS makes this workable: `EJS_paths` overrides any file it loads *by
+basename*, and its downloader takes the plain `fetch()` branch for any non-http
+URL, so a `blob:` URL is accepted everywhere. Its cores, BIOS files and
+localization go through `XMLHttpRequest` — **not** `fetch` — which is why the
+XHR shim is load-bearing rather than a nicety.
+
 ### Working configurations
 
 1. **Same origin (recommended, and what is verified).** Serve the app from the

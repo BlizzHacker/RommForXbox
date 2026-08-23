@@ -40,6 +40,34 @@ function releaseBlobs() {
   blobUrls = [];
 }
 
+/* Cover art re-fetched through the native bridge, cached and bounded.
+ *
+ * Kept out of blobUrls deliberately: those are revoked on entering a game, and
+ * the grid outlives that. The cap is what keeps a 4,000-game platform from
+ * accumulating an object URL per tile; the oldest are revoked as it fills. A
+ * failed fetch is cached as null so a server that will not serve covers is
+ * asked once per image, not once per redraw. */
+const COVER_CACHE_MAX = 400;
+const coverCache = new Map();
+function coverBlobUrl(url) {
+  const hit = coverCache.get(url);
+  if (hit !== undefined) return Promise.resolve(hit);
+  const p = ROMM.assetBlobUrl(url).catch(() => null).then(u => {
+    coverCache.set(url, u);
+    while (coverCache.size > COVER_CACHE_MAX) {
+      const oldest = coverCache.keys().next().value;
+      const dead = coverCache.get(oldest);
+      coverCache.delete(oldest);
+      // Entries are a Promise while in flight and a string (or null) after;
+      // only the settled ones own an object URL to release.
+      if (typeof dead === 'string') URL.revokeObjectURL(dead);
+    }
+    return u;
+  });
+  coverCache.set(url, p);           // de-duplicates concurrent tiles
+  return p;
+}
+
 /* RomM platform slug → EmulatorJS *system* name. Presence here is the "plays on
  * the console itself" decision — no server round-trip needed to know it.
  *
@@ -266,10 +294,10 @@ function probeMessage(e, server) {
   const reason = (e && e.reason) || (e && e.message) || '';
   switch (reason) {
     case 'mixed-content':
-      return 'This app is served over HTTPS and cannot reach an http:// server ' +
-             'from the page. On the console the app fetches http servers ' +
-             'natively, so this only happens in a plain browser: use an https:// ' +
-             'address there.';
+      return 'This page is served over HTTPS and cannot reach an http:// server. ' +
+             'The installed Xbox app fetches http servers natively and has no ' +
+             'such limit, so this only happens in a plain browser: use an ' +
+             'https:// address there, or install the app.';
     case 'not-romm':
       return 'That address answered, but it is not a RomM server. Check you ' +
              'used the RomM address (not, say, your router or another app).';
@@ -287,8 +315,9 @@ function probeMessage(e, server) {
       return 'The server did not respond in time. Check it is on and reachable ' +
              'from this console\'s network.';
     case 'too-large':
-      return 'The server responded but the download was too large for the http ' +
-             'bridge. Use an https address for large content.';
+      return 'The server responded, but that file is larger than this console ' +
+             'will download. Disc-sized games play through a stream server ' +
+             'instead — add one in Settings.';
     default:
       if (/^http-/.test(reason))
         return 'The server answered with ' + reason.replace('http-', 'HTTP ') +
@@ -310,10 +339,51 @@ function crossOriginFileHint(what) {
     'or add Access-Control-Allow-Origin for those paths in your own proxy.';
 }
 
+/* True only where cross-origin is actually the rule in force.
+ *
+ * Inside the Xbox app it never is. The page is served from https://app.local,
+ * so a plain comparison of origins is true for EVERY server anyone could
+ * configure — and the requests are not made by the renderer anyway, they are
+ * made by native code, which no CORS rule applies to. Answering "yes, cross
+ * origin" there turned every download failure, whatever its cause, into a
+ * lecture about adding Access-Control-Allow-Origin to a proxy, which could not
+ * have helped and sent at least one user off to reconfigure a server that was
+ * working correctly. In a browser the check is real, and stays.
+ */
 const isCrossOrigin = () => {
+  if (HOST.present) return false;
   try { return new URL(CFG.server).origin !== location.origin; }
   catch (_) { return false; }
 };
+
+/* What to tell the user when something in the play path would not load.
+ *
+ * The reason tag comes from the native bridge (dns/tls/refused/timeout/
+ * too-large) or from an HTTP status, so this can name the real fault instead of
+ * guessing at one. */
+function playFailureMessage(what, e) {
+  const reason = (e && (e.reason || e.nativeReason)) || '';
+  if (reason === 'too-large') {
+    return ((e && (e.nativeDetail || e.message)) || 'That file is too large for this console.')
+      + ' Disc-sized games play through a stream server — add one in Settings.';
+  }
+  if (reason === 'timeout') {
+    return 'The transfer from ' + (CFG.server || 'your server') + ' stopped partway. '
+      + 'Check the server is still running and that this console\'s connection to '
+      + 'it is steady (a wired connection is far more reliable for large games).';
+  }
+  if (/^http-4|^http-5/.test(reason)) {
+    return 'Your server answered ' + reason.replace('http-', 'HTTP ') + ' for '
+      + what + '. ' + (reason === 'http-404'
+        ? 'That file is not on the server — for EmulatorJS, update RomM; for a '
+          + 'game, rescan your library.'
+        : 'Check the RomM logs for what it refused.');
+  }
+  if (isCrossOrigin()) return crossOriginFileHint(what);
+  if (reason) return probeMessage(e, CFG.server || 'your server');
+  return 'Could not load ' + what.toLowerCase() + ': '
+    + ((e && e.message) || 'unknown error');
+}
 
 function useServer(server) {
   CFG.server = server;
@@ -697,7 +767,19 @@ function renderGrid() {
       const img = document.createElement('img');
       img.loading = 'lazy';
       img.src = cover;
-      img.onerror = () => img.removeAttribute('src');
+      // A cover is one of the few things the console loads as a plain <img>,
+      // and on a plain-http server that is mixed content, which Chromium
+      // blocks. Images are usually auto-upgraded to https first — but not when
+      // the host is a bare IP address, which is what a LAN RomM almost always
+      // is, so those are blocked outright. Either way an art-less grid is not a
+      // missing cover, it is the scheme. Re-fetch through the native bridge,
+      // once, and only for the tiles the browser actually asked for (they are
+      // lazy, so that is what is on screen).
+      img.onerror = () => {
+        img.removeAttribute('src');
+        if (!HOST.needsNative(cover)) return;
+        coverBlobUrl(cover).then(u => { if (u) img.src = u; });
+      };
       t.appendChild(img);
     } else {
       const ph = document.createElement('div');
@@ -753,6 +835,41 @@ function armLocalQuitWatcher() {
   }, 100);
 }
 
+/* The URL to load EmulatorJS's loader.js from.
+ *
+ * EmulatorJS comes from the user's own RomM, and on a plain-http server the
+ * console cannot load most of it the ordinary way: loader.js and
+ * emulator.min.js arrive as <script src>, emulator.min.css as a <link href>,
+ * and from this app's https origin all three are active mixed content — blocked
+ * inside the renderer before the native bridge or any of our code can see the
+ * request. That is why a plain-http RomM browsed perfectly and then failed the
+ * moment somebody pressed A.
+ *
+ * Fetching them natively and handing them over as blob: URLs is the route that
+ * works, and EmulatorJS is built to allow exactly this: EJS_paths overrides any
+ * file by basename, and its downloader takes the plain fetch() branch for any
+ * non-http URL. Everything else it wants — cores, BIOS, localization — goes
+ * through fetch or XMLHttpRequest, which the bridge already covers.
+ *
+ * An https server needs none of this and keeps the direct, verified path.
+ */
+async function emulatorJsLoaderSrc() {
+  const data = ROMM.emulatorJsData();
+  if (!HOST.needsNative(data)) return data + 'loader.js';
+
+  const [loader, minJs, minCss] = await Promise.all([
+    ROMM.assetBlobUrl(data + 'loader.js'),
+    ROMM.assetBlobUrl(data + 'emulator.min.js'),
+    ROMM.assetBlobUrl(data + 'emulator.min.css'),
+  ]);
+  blobUrls.push(loader, minJs, minCss);
+  window.EJS_paths = Object.assign({}, window.EJS_paths, {
+    'emulator.min.js': minJs,
+    'emulator.min.css': minCss,
+  });
+  return loader;
+}
+
 async function startLocal(p, g) {
   show('local');
   releaseBlobs();
@@ -771,14 +888,12 @@ async function startLocal(p, g) {
     });
     blobUrls.push(romUrl);
   } catch (e) {
+    noteFailure('rom download', e);
     if (e instanceof ROMM.AuthError) {
       $('local-msg').textContent = 'Sign-in expired. Press B to sign in again.';
-    } else if (isCrossOrigin()) {
-      $('local-msg').textContent = crossOriginFileHint('ROM downloads') +
-        '  (B to go back)';
     } else {
       $('local-msg').textContent =
-        'Could not download this game: ' + e.message + '  (B to go back)';
+        playFailureMessage('ROM downloads', e) + '  (B to go back)';
     }
     return;
   }
@@ -810,8 +925,18 @@ async function startLocal(p, g) {
     } catch (_) { /* keep playing even if the upload fails */ }
   };
 
+  let loaderSrc;
+  try {
+    loaderSrc = await emulatorJsLoaderSrc();
+  } catch (e) {
+    noteFailure('emulatorjs', e);
+    overlay.classList.remove('hidden');
+    $('local-msg').textContent = playFailureMessage('EmulatorJS', e) + '  (B to go back)';
+    return;
+  }
+
   const s = document.createElement('script');
-  s.src = ROMM.emulatorJsData() + 'loader.js';
+  s.src = loaderSrc;
   s.onerror = () => {
     overlay.classList.remove('hidden');
     $('local-msg').textContent = isCrossOrigin()

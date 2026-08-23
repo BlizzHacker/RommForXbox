@@ -2,12 +2,12 @@
 
 Product: **9MXC51W17LH4** — `https://partner.microsoft.com/dashboard/products/9MXC51W17LH4`
 
-Upload **`RommForXbox_0.10.0.0_x64_STORE.msixupload`** — in
+Upload **`RommForXbox_0.27.0.0_x64_STORE.msixupload`** — in
 `C:\MoveWeight\STORE-SUBMIT\`, and an artifact of the `Build Xbox shell MSIX`
 workflow. `.msixupload` is the format Partner Center wants; it carries the
 framework dependencies with it.
 
-`RommForXbox_0.10.0.0_x64_SIDELOAD.msix` beside it is the Dev Mode build, for
+`RommForXbox_0.27.0.0_x64_SIDELOAD.msix` beside it is the Dev Mode build, for
 testing on a console through the Device Portal.
 
 Do **not** submit the older hosted-web-app packages (`RommForXbox_0.1.0.0` or
@@ -20,7 +20,7 @@ Identity is fixed and must not drift from the product:
 |---|---|
 | Name | `MOVEWEIGHT.RomMforXbox` |
 | Publisher | `CN=6375D74B-5E4F-45B4-B246-B29507C1332A` |
-| Version | `0.10.0.0` (raise for every resubmission — the Store rejects a repeat) |
+| Version | `0.27.0.0` (raise for every resubmission — the Store rejects a repeat) |
 | Architecture | `x64` (Xbox is x64; a C# UWP app cannot be `neutral`) |
 
 Claude cannot sign in to Partner Center or submit on your behalf. Everything
@@ -104,14 +104,22 @@ junk entries at the head of each list).
 **Search terms**: `romm`, `retro`, `game library`, `emulator frontend`,
 `self-hosted`, `homelab`
 
-**What's new in this version**
+**What's new in this version** (0.27.0.0)
 
-> Connect to any RomM server by typing just its address — no scheme or port
-> needed, and plain-http servers on your own network now work. Fixes from testing
-> on real hardware: the B button no longer closes the app while you are typing
-> (backspace is X, shift is Y), the keyboard has the characters an address needs,
-> Mega Drive/Genesis and Turbografx-CD libraries are playable, and controller
-> input reaches games running on the console.
+> Games now play from a plain `http://` server on your own network. Browsing
+> already worked, but downloads and the emulator itself did not, and the app
+> blamed it on your server's cross-origin settings — which was never the cause
+> and could not be fixed from there. Downloads are no longer capped, so large
+> cartridges work, and you get a real progress percentage. Cover art loads on
+> http servers too. When something does go wrong, the app now names the actual
+> reason instead of guessing.
+
+**Why 0.27 matters** — 0.26 and every version before it could not play a single
+game from an `http://192.168.x.x` RomM, which is the most common way people run
+one. The failure looked like a server misconfiguration, so the people it hit
+went and changed working servers. See
+[multi-tenancy.md](multi-tenancy.md#the-consoles-real-constraint-an-https-page-cannot-load-http-subresources)
+for what was actually happening.
 
 ## IARC answers
 

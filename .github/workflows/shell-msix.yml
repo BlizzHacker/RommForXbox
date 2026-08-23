@@ -76,6 +76,18 @@ jobs:
           node shell/tests/bridge-logic.test.mjs
           if ($LASTEXITCODE -ne 0) { Write-Error 'bridge logic tests failed'; exit 1 }
 
+      - name: Test the http-LAN transport (Node, runs the real host-bridge.js)
+        shell: pwsh
+        run: |
+          # Drives the SHIPPED host-bridge.js against a simulated shell: streamed
+          # head/chunk/end, acknowledgement pacing, progress, error reasons, and
+          # the XMLHttpRequest shim EmulatorJS's core downloads depend on. This
+          # path only ever ran on a retail console before, which is how a 24MB
+          # transfer cap shipped to the Store and made most games undownloadable
+          # on a plain-http LAN server.
+          node shell/tests/native-fetch.test.mjs
+          if ($LASTEXITCODE -ne 0) { Write-Error 'native fetch transport tests failed'; exit 1 }
+
       - name: Generate build stamp
         shell: pwsh
         run: |

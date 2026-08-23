@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -10,47 +12,96 @@ namespace RommForXbox.Shell
 {
     /// <summary>
     /// A message-based fetch bridge: the renderer asks native code to perform an
-    /// HTTP request and gets the full response (status, headers, body) back over
-    /// the same postMessage channel the gamepad uses.
+    /// HTTP request and gets the response back over the same postMessage channel
+    /// the gamepad uses.
     ///
     /// This exists for exactly one case the renderer cannot handle itself: a
-    /// plain-http RomM on the LAN. The packaged page is served from https, so an
-    /// https-to-http fetch is active mixed content and the renderer blocks it
-    /// before any code runs. Native HttpClient has no such rule.
+    /// plain-http RomM on the LAN, which is what most self-hosted boxes are. The
+    /// packaged page is served from https, so an https-to-http request is active
+    /// mixed content and the renderer blocks it before any code runs. Native
+    /// HttpClient has no such rule.
     ///
     /// This is NOT the old WebResourceRequested proxy. That architecture was
     /// proven dead on this console: a CreateWebResourceResponse carrying a body
     /// stream is never delivered to the renderer. Here the body travels as data
     /// inside a web message the renderer already knows how to receive, so it
-    /// arrives. The tradeoff is that the whole body is buffered and base64'd, so
-    /// this path is for the JSON API and pairing (small), not for streaming a
-    /// several-hundred-megabyte ROM. Callers gate on size.
+    /// arrives.
+    ///
+    /// The body is STREAMED, in chunks, rather than base64'd whole into one
+    /// message. The single-message version had to cap responses at 24 MB, and
+    /// that cap was not an edge case: it refused most EmulatorJS cores and every
+    /// cartridge past the 16-bit era, on the exact configuration this bridge
+    /// exists to serve. Streaming also gives the page real download progress and
+    /// keeps peak memory to one chunk on each side.
+    ///
+    /// Flow control is by acknowledgement. Without it a fast server fills the
+    /// WebView2 message queue faster than the renderer drains it, which on a
+    /// console budget is how an app dies mid-download; at most
+    /// <see cref="WindowChunks"/> chunks are ever in flight.
     ///
     /// https servers never use this path; they are reached directly.
     /// </summary>
     internal sealed class NativeFetch
     {
-        // A body larger than this is refused rather than base64'd through a web
-        // message: it would balloon in memory and stall the message pump. The
-        // renderer is told to use https for ROM content on a plain-http server.
-        private const long MaxBodyBytes = 24L * 1024 * 1024;
+        // Raw bytes per chunk. Base64 inflates this by a third on the wire, so
+        // each message is around 350 KB. Chunk size is not what limits
+        // throughput here — the acknowledgement window keeps several in flight,
+        // which is already far more than a LAN can fill — so it is chosen small
+        // enough to keep per-message allocation modest on a console heap.
+        private const int ChunkBytes = 256 * 1024;
+
+        // Chunks allowed in flight before the renderer must acknowledge.
+        private const int WindowChunks = 8;
+
+        // A hard ceiling, so a mistyped URL pointing at something enormous cannot
+        // fill the console's storage. Disc-sized systems are served by the stream
+        // tier, not by downloading the image to the console.
+        private const long MaxBodyBytes = 1024L * 1024L * 1024L;
 
         private static readonly TimeSpan HeaderTimeout = TimeSpan.FromSeconds(12);
 
+        // If the renderer stops acknowledging this long, it has navigated away,
+        // reloaded or died. Abandon the transfer rather than blocking forever.
+        private static readonly TimeSpan AckTimeout = TimeSpan.FromSeconds(60);
+
+        // How long the body may go silent before the transfer is abandoned. Any
+        // working transfer delivers something well inside this; a stalled one
+        // would otherwise hold a connection open for the life of the app.
+        private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(60);
+
         private static readonly HttpClient Http = CreateClient();
+
+        // One gate per in-flight request, released by the renderer's acks.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates =
+            new ConcurrentDictionary<string, SemaphoreSlim>();
 
         private static HttpClient CreateClient()
         {
             var handler = new HttpClientHandler { AllowAutoRedirect = true };
             var c = new HttpClient(handler);
-            c.Timeout = Timeout.InfiniteTimeSpan; // per-request timeout below
+            c.Timeout = Timeout.InfiniteTimeSpan; // per-phase timeouts below
             return c;
         }
 
         /// <summary>
-        /// Handle one {t:"nfetch", ...} message. Always replies with a
-        /// {t:"nfetchResult", id, ...} message so the renderer's promise settles,
-        /// whether the request succeeded, failed, or was refused.
+        /// Handle one {t:"nfetchAck", id} message from the renderer: one more
+        /// chunk may go out for that request.
+        /// </summary>
+        public static void Ack(JsonObject msg)
+        {
+            var id = msg.GetNamedString("id", string.Empty);
+            SemaphoreSlim gate;
+            if (id.Length > 0 && Gates.TryGetValue(id, out gate))
+            {
+                try { gate.Release(); }
+                catch (SemaphoreFullException) { /* duplicate ack; harmless */ }
+            }
+        }
+
+        /// <summary>
+        /// Handle one {t:"nfetch", ...} message. Always ends the exchange with
+        /// either {t:"nfetchEnd"} or {t:"nfetchFail"} so the renderer's promise
+        /// settles, whether the request succeeded, failed, or was refused.
         /// </summary>
         public static async Task Handle(CoreWebView2 web, JsonObject msg)
         {
@@ -58,11 +109,9 @@ namespace RommForXbox.Shell
             var url = msg.GetNamedString("url", string.Empty);
             var method = msg.GetNamedString("method", "GET");
 
-            var reply = new JsonObject
-            {
-                ["t"] = JsonValue.CreateStringValue("nfetchResult"),
-                ["id"] = JsonValue.CreateStringValue(id),
-            };
+            var gate = new SemaphoreSlim(WindowChunks, int.MaxValue);
+            Gates[id] = gate;
+            var headSent = false;
 
             try
             {
@@ -93,56 +142,84 @@ namespace RommForXbox.Shell
                         var len = resp.Content.Headers.ContentLength;
                         if (len.HasValue && len.Value > MaxBodyBytes)
                         {
-                            Fail(reply, "too-large",
-                                "Response is " + len.Value + " bytes; the http bridge caps at "
-                                + MaxBodyBytes + ". Use an https server for large downloads.");
-                            Send(web, reply);
+                            SendFail(web, id, "too-large",
+                                "This file is " + Megabytes(len.Value) + " MB. The console can "
+                                + "download up to " + Megabytes(MaxBodyBytes) + " MB; disc-sized "
+                                + "games play through a stream server instead.");
                             return;
                         }
 
-                        var bytes = await resp.Content.ReadAsByteArrayAsync();
-                        if (bytes.Length > MaxBodyBytes)
+                        SendHead(web, id, resp, len.HasValue ? len.Value : -1);
+                        headSent = true;
+
+                        var total = 0L;
+                        var buffer = new byte[ChunkBytes];
+                        using (var stream = await resp.Content.ReadAsStreamAsync())
+                        using (var readCts = new CancellationTokenSource())
                         {
-                            Fail(reply, "too-large", "Response exceeded the http bridge cap.");
-                            Send(web, reply);
-                            return;
+                            for (;;)
+                            {
+                                // Re-armed every pass, so the limit is SILENCE
+                                // rather than total duration: a large ROM may
+                                // legitimately take many minutes, but a server
+                                // that stops sending must not leave the request
+                                // — and its connection — hanging forever.
+                                readCts.CancelAfter(ReadTimeout);
+                                var read = await stream.ReadAsync(
+                                    buffer, 0, buffer.Length, readCts.Token);
+                                if (read <= 0) break;
+
+                                total += read;
+                                if (total > MaxBodyBytes)
+                                {
+                                    SendFail(web, id, "too-large",
+                                        "The download passed the " + Megabytes(MaxBodyBytes)
+                                        + " MB limit for this console.");
+                                    return;
+                                }
+
+                                if (!await gate.WaitAsync(AckTimeout))
+                                {
+                                    // The page stopped acknowledging: it navigated
+                                    // away or died. Nothing is listening.
+                                    return;
+                                }
+
+                                SendChunk(web, id, buffer, read);
+                            }
                         }
 
-                        var headers = new JsonObject();
-                        foreach (var h in resp.Headers)
-                        {
-                            headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
-                        }
-                        foreach (var h in resp.Content.Headers)
-                        {
-                            headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
-                        }
-
-                        reply["ok"] = JsonValue.CreateBooleanValue(true);
-                        reply["status"] = JsonValue.CreateNumberValue((int)resp.StatusCode);
-                        reply["statusText"] = JsonValue.CreateStringValue(resp.ReasonPhrase ?? string.Empty);
-                        reply["headers"] = headers;
-                        reply["bodyBase64"] = JsonValue.CreateStringValue(Convert.ToBase64String(bytes));
+                        SendEnd(web, id);
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                Fail(reply, "timeout", "The server did not respond within "
-                    + (int)HeaderTimeout.TotalSeconds + " seconds.");
+                SendFail(web, id, "timeout", headSent
+                    ? "The server stopped sending partway through the download."
+                    : "The server did not respond within "
+                      + (int)HeaderTimeout.TotalSeconds + " seconds.");
             }
             catch (HttpRequestException ex)
             {
                 // Give the renderer a classifiable reason, not just "network".
-                var kind = ClassifyNetworkError(ex);
-                Fail(reply, kind, Flatten(ex));
+                SendFail(web, id, ClassifyNetworkError(ex), Flatten(ex));
             }
             catch (Exception ex)
             {
-                Fail(reply, "error", Flatten(ex));
+                SendFail(web, id, "error", Flatten(ex));
             }
+            finally
+            {
+                SemaphoreSlim gone;
+                Gates.TryRemove(id, out gone);
+                gate.Dispose();
+            }
+        }
 
-            Send(web, reply);
+        private static long Megabytes(long bytes)
+        {
+            return bytes / (1024L * 1024L);
         }
 
         private static string ClassifyNetworkError(Exception ex)
@@ -166,11 +243,64 @@ namespace RommForXbox.Shell
             return "network";
         }
 
-        private static void Fail(JsonObject reply, string reason, string detail)
+        private static void SendHead(CoreWebView2 web, string id,
+                                     HttpResponseMessage resp, long length)
         {
-            reply["ok"] = JsonValue.CreateBooleanValue(false);
-            reply["reason"] = JsonValue.CreateStringValue(reason);
-            reply["detail"] = JsonValue.CreateStringValue(detail);
+            var headers = new JsonObject();
+            foreach (var h in resp.Headers)
+            {
+                headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
+            }
+            foreach (var h in resp.Content.Headers)
+            {
+                headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
+            }
+
+            var reply = new JsonObject
+            {
+                ["t"] = JsonValue.CreateStringValue("nfetchHead"),
+                ["id"] = JsonValue.CreateStringValue(id),
+                ["status"] = JsonValue.CreateNumberValue((int)resp.StatusCode),
+                ["statusText"] = JsonValue.CreateStringValue(resp.ReasonPhrase ?? string.Empty),
+                ["url"] = JsonValue.CreateStringValue(
+                    resp.RequestMessage != null && resp.RequestMessage.RequestUri != null
+                        ? resp.RequestMessage.RequestUri.ToString() : string.Empty),
+                ["length"] = JsonValue.CreateNumberValue(length),
+                ["headers"] = headers,
+            };
+            Send(web, reply);
+        }
+
+        private static void SendChunk(CoreWebView2 web, string id, byte[] buffer, int count)
+        {
+            var reply = new JsonObject
+            {
+                ["t"] = JsonValue.CreateStringValue("nfetchChunk"),
+                ["id"] = JsonValue.CreateStringValue(id),
+                ["b64"] = JsonValue.CreateStringValue(
+                    Convert.ToBase64String(buffer, 0, count)),
+            };
+            Send(web, reply);
+        }
+
+        private static void SendEnd(CoreWebView2 web, string id)
+        {
+            Send(web, new JsonObject
+            {
+                ["t"] = JsonValue.CreateStringValue("nfetchEnd"),
+                ["id"] = JsonValue.CreateStringValue(id),
+            });
+        }
+
+        private static void SendFail(CoreWebView2 web, string id, string reason, string detail)
+        {
+            Send(web, new JsonObject
+            {
+                ["t"] = JsonValue.CreateStringValue("nfetchFail"),
+                ["id"] = JsonValue.CreateStringValue(id),
+                ["reason"] = JsonValue.CreateStringValue(reason),
+                ["detail"] = JsonValue.CreateStringValue(detail ?? string.Empty),
+            });
         }
 
         private static string Flatten(Exception ex)

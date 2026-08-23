@@ -50,9 +50,14 @@ Sign in either way:
 * **Username and password** — for a controller-only console that cannot easily
   reach RomM's web UI to mint a code.
 
-**Serve the app from the same origin as your RomM.** RomM sends CORS headers on
-its JSON API but not on ROM downloads or `/assets` (nginx serves those), so a
-remote RomM will browse but not play. See
+**In the installed Xbox app, a plain `http://192.168.x.x` address on your LAN is
+supported and needs no proxy, no certificate and no CORS headers.** The app
+fetches from a plain-http server through native code, which no browser rule
+applies to.
+
+**In the Xbox *browser*, serve the app from the same origin as your RomM.** RomM
+sends CORS headers on its JSON API but not on ROM downloads or `/assets` (nginx
+serves those), so a remote RomM will browse but not play there. See
 [docs/multi-tenancy.md](docs/multi-tenancy.md) for why and for the two-header
 workaround.
 

@@ -278,29 +278,40 @@ namespace RommForXbox.Shell
 
             if (json == null) return;
 
-            // host-bridge.js posts {"t":"ready"} once it is listening. Pumping
-            // before that just drops frames on the floor.
-            if (json.Contains("\"ready\""))
+            // Switch on the parsed tag rather than on substrings of the raw
+            // JSON. Substring matching worked while there was one message type
+            // per prefix; it stops working the moment a second one shares it
+            // (nfetch / nfetchAck), and it fails silently when it does.
+            Windows.Data.Json.JsonObject obj;
+            if (!Windows.Data.Json.JsonObject.TryParse(json, out obj)) return;
+            var tag = obj.GetNamedString("t", string.Empty);
+
+            switch (tag)
             {
-                _pads.Start(sender);
-            }
-            else if (json.Contains("\"exit\""))
-            {
-                // The page reached its root and the user pressed back. Leaving
-                // has to be possible without the Guide button.
-                _pads.Stop();
-                Application.Current.Exit();
-            }
-            else if (json.Contains("\"nfetch\""))
-            {
-                // A plain-http LAN request the renderer cannot make itself.
-                // Performed natively and replied over the same channel.
-                Windows.Data.Json.JsonObject obj;
-                if (Windows.Data.Json.JsonObject.TryParse(json, out obj)
-                    && obj.GetNamedString("t", string.Empty) == "nfetch")
-                {
+                case "ready":
+                    // host-bridge.js posts this once it is listening. Pumping
+                    // before that just drops frames on the floor.
+                    _pads.Start(sender);
+                    break;
+
+                case "exit":
+                    // The page reached its root and the user pressed back.
+                    // Leaving has to be possible without the Guide button.
+                    _pads.Stop();
+                    Application.Current.Exit();
+                    break;
+
+                case "nfetch":
+                    // A plain-http LAN request the renderer cannot make itself.
+                    // Performed natively and streamed back over this channel.
                     var _ = NativeFetch.Handle(sender, obj);
-                }
+                    break;
+
+                case "nfetchAck":
+                    // Flow control: the page has taken delivery of a chunk, so
+                    // one more may go out.
+                    NativeFetch.Ack(obj);
+                    break;
             }
         }
     }

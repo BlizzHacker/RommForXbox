@@ -67,7 +67,11 @@ const ROMM = (() => {
       if (!retried && await refreshAccess()) return req(path, opts, true);
       throw new AuthError('auth');
     }
-    if (!r.ok) throw new NetError('HTTP ' + r.status);
+    // Carry the status as a machine reason too. 'HTTP 404' as the reason fell
+    // through every case in the message table and came out as the generic
+    // "check the address" line, which is the wrong advice for a file the server
+    // simply does not have.
+    if (!r.ok) throw new NetError('HTTP ' + r.status, 'http-' + r.status);
     return r;
   }
 
@@ -187,11 +191,39 @@ const ROMM = (() => {
 
   const emulatorJsData = () => base() + '/assets/emulatorjs/data/';
 
+  /* Any file on the user's server, as a blob: URL.
+   *
+   * This is how the console reaches things the renderer will not load itself.
+   * The app's own origin is https, so on a plain-http server an <img>, a
+   * <script src> or a <link href> pointing at the server is mixed content and
+   * is blocked before any of our code runs. Going through HOST.fetch puts the
+   * request in native hands, where no such rule applies, and a blob: URL of the
+   * result is same-origin for every element that consumes it.
+   *
+   * Unauthenticated on purpose: covers and EmulatorJS are public paths, and
+   * sending a Bearer token to them would only invite a 401 on servers that
+   * restrict the header.
+   */
+  async function assetBlobUrl(url) {
+    let r;
+    try {
+      r = await HOST.fetch(url, { method: 'GET' });
+    } catch (e) {
+      throw netError(e);
+    }
+    if (!r.ok) throw new NetError('HTTP ' + r.status, 'http-' + r.status);
+    return URL.createObjectURL(await r.blob());
+  }
+
   // EmulatorJS fetches the ROM by URL and cannot attach an Authorization
   // header, so pull the bytes here and hand it a blob: URL instead.
   async function romBlobUrl(rom, onProgress) {
     const name = rom.fs_name || rom.file_name;
-    const r = await req(`/api/roms/${rom.id}/content/${encodeURIComponent(name)}`);
+    // onProgress rides along in the fetch init: the native bridge reports
+    // progress through it as chunks land, and the platform fetch ignores an
+    // option it does not know, leaving the reader loop below in charge there.
+    const r = await req(
+      `/api/roms/${rom.id}/content/${encodeURIComponent(name)}`, { onProgress });
     const total = Number(r.headers.get('content-length')) || 0;
     if (!r.body || !onProgress) return URL.createObjectURL(await r.blob());
     const chunks = [];
@@ -236,7 +268,7 @@ const ROMM = (() => {
     AuthError, NetError, SCOPES,
     probe, probeAny, exchangePairCode, signIn, refreshAccess,
     platforms, roms, coverUrl,
-    emulatorJsData, romBlobUrl,
+    emulatorJsData, romBlobUrl, assetBlobUrl,
     states, putState, stateBlobUrl,
   };
 })();
