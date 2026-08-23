@@ -23,6 +23,9 @@ let games = [], gameIdx = 0;
 const GRID_COLS = 8;          // must match grid-template-columns in style.css
 const PAGE_SIZE = 500;
 let currentGame = null, quitHold = 0, activeStateId = null, blobUrls = [];
+// Non-empty once a save-state upload has failed this session, so Diagnostics can
+// report it and the on-screen warning fires once rather than every save.
+let saveStateTrouble = '';
 let hiddenGames = 0, hiddenPlatforms = 0, impossibleGames = 0;
 
 const $ = id => document.getElementById(id);
@@ -171,13 +174,31 @@ async function refreshStreamable() {
   }
 }
 
+/* EmulatorJS systems whose cores need pthreads, and so a SharedArrayBuffer.
+ *
+ * EmulatorJS refuses these outright unless it was given threads: its
+ * downloadGameCore() checks requiresThreads(['ppsspp','dosbox_pure']) and, if
+ * threads are off, shows its webmaster-facing "Error for site owner / Check
+ * console" — on a console, where there is no console to check. No server
+ * setting can change that; SharedArrayBuffer requires a cross-origin-isolated
+ * page, and the packaged app is not one.
+ *
+ * So this is gated on the real capability rather than assumed: a deployment
+ * that DOES serve COOP/COEP keeps PSP and DOS playable locally, and the shell
+ * routes them to the stream tier instead of into a dead end. */
+const THREADED_EJS_SYSTEMS = new Set(['psp', 'dos']);
+const canRunThreadedCores = () =>
+  typeof self !== 'undefined' && self.crossOriginIsolated === true;
+
 function tierFor(slug) {
   // EJS_CORES says a core *exists* for this platform, not that the server has
   // downloaded it. PSP is in the table and its core is absent, so trusting the
   // table alone sent 1,182 games to a launch that could never succeed. When the
   // server tells us the core is missing, fall through to the stream tier, which
   // has its own (ppsspp) core for exactly this case.
-  if (EJS_CORES[slug] && !ejsUnavailable.has(slug)) return 'local';
+  const ejs = EJS_CORES[slug];
+  const threadBlocked = THREADED_EJS_SYSTEMS.has(ejs) && !canRunThreadedCores();
+  if (ejs && !ejsUnavailable.has(slug) && !threadBlocked) return 'local';
   const canStream = streamable ? streamable.has(slug) : STREAM_CORES.has(slug);
   if (canStream) return CFG.stream ? 'stream' : 'server';
   if (STREAM_CORES.has(slug)) return 'server';   // possible, but not on this server
@@ -264,7 +285,7 @@ function askServer() {
         renderSetup();
       } catch (e) {
         noteFailure("server probe", e);
-        OSK.setStatus(probeMessage(e, list[list.length - 1]));
+        OSK.setStatus(probeMessage(e, e.server || list[list.length - 1]));
       }
     },
     onCancel: () => { OSK.close(); show('setup'); renderSetup(''); },
@@ -291,7 +312,11 @@ function askStream() {
 // a bare "Failed to fetch". The reason tag comes from romm.js (which carries the
 // native bridge's classification of dns/tls/refused/timeout).
 function probeMessage(e, server) {
-  const reason = (e && e.reason) || (e && e.message) || '';
+  // nativeReason matters as much as reason now: a body that fails mid-download
+  // rejects with a plain TypeError from the bridge, outside the client's
+  // NetError wrapping, and reading only .reason sent that whole class of
+  // failure to the generic "could not reach" line.
+  const reason = (e && e.reason) || (e && e.nativeReason) || (e && e.message) || '';
   switch (reason) {
     case 'mixed-content':
       return 'This page is served over HTTPS and cannot reach an http:// server. ' +
@@ -301,6 +326,10 @@ function probeMessage(e, server) {
     case 'not-romm':
       return 'That address answered, but it is not a RomM server. Check you ' +
              'used the RomM address (not, say, your router or another app).';
+    case 'bad-json':
+      return 'Your server answered, but not with the data RomM sends. Something ' +
+             'in between is intercepting the request — a reverse proxy, or a ' +
+             'guest-network sign-in page. Try the RomM address directly.';
     case 'dns':
       return 'That hostname could not be found (DNS). Check the spelling, or ' +
              'try the server\'s IP address instead.';
@@ -413,14 +442,40 @@ function gamepadSummary() {
   return 'not detected';
 }
 
+/* Result of the last real bridge round trip, shown in Diagnostics. */
+let bridgeProof = 'not tested (press A)';
+
+/* Actually exercise the native bridge rather than asserting it exists. Uses the
+ * configured server's heartbeat because that is the exact path everything else
+ * depends on; a failure here is the single most useful fact a tester can read
+ * off the screen. */
+async function proveBridge() {
+  if (!HOST.present) return 'n/a';
+  if (!window.__cartNativeFetch) return 'MISSING - the page never installed it';
+  const server = CFG.server || '';
+  if (!server) return 'installed, untested (no server set)';
+  if (!HOST.needsNative(server)) return 'installed, not needed for an https server';
+  const t0 = Date.now();
+  try {
+    const r = await window.__cartNativeFetch(server + '/api/heartbeat', { method: 'GET' });
+    await r.blob();
+    return (r.ok ? 'OK' : 'HTTP ' + r.status) + ' in ' + (Date.now() - t0) + ' ms';
+  } catch (e) {
+    return 'FAILED - ' + ((e && e.nativeReason) || (e && e.message) || 'error');
+  }
+}
+
 async function renderDiag(status) {
   const server = CFG.server || '';
   const rows = [
     ['Build', BUILD + (BUILD_SHA ? ' (' + BUILD_SHA + ')' : '')
       + (BUILD_DATE ? ' ' + BUILD_DATE : '')],
     ['Running in', HOST.present ? 'Xbox app (native host)' : 'browser'],
-    ['Native http bridge', HOST.present
-      ? (window.__cartNativeFetch ? 'ready' : 'missing') : 'n/a'],
+    // Proved by an actual round trip, not by a symbol existing. The old check
+    // asserted "ready" purely because host-bridge.js had defined a function --
+    // it would have said the same with the shell's message handler never wired,
+    // which makes the single most load-bearing fact on this screen a constant.
+    ['Native http bridge', HOST.present ? bridgeProof : 'n/a'],
     ['Controller', gamepadSummary()],
     ['Gamepads seen', String((navigator.getGamepads
       ? [...navigator.getGamepads()] : []).filter(Boolean).length)],
@@ -431,6 +486,14 @@ async function renderDiag(status) {
     ['Signed in', CFG.token ? 'yes (' + (CFG.mode || 'client') + ')' : 'no'],
     ['Stream server', CFG.stream || 'none'],
     ['Playable platforms', platforms.length ? String(platforms.length) : '—'],
+    ['Save states', saveStateTrouble
+      ? 'FAILING to upload - ' + saveStateTrouble
+      : (CFG.token ? 'no failures seen' : '-')],
+    // A core that quietly came from the EmulatorJS CDN makes a broken path to
+    // your own server look like a working one. Say so.
+    ['Cores from emulatorjs.org', (window.__cartCdnHits || 0) > 0
+      ? String(window.__cartCdnHits) + ' request(s) - NOT from your server'
+      : 'none'],
     ['Last failure', lastFailure || 'none'],
   ];
   const dl = $('diag-kv');
@@ -460,16 +523,29 @@ async function testDiag() {
     } catch (e) {
       results.push('library read FAILED — ' + (e.message || 'error'));
     }
-    // The check that actually matters: ROM bytes and EmulatorJS come from paths
-    // RomM does not add CORS headers to, which is what the native host works
-    // around. Browsing can succeed while play fails.
+    /* Test EmulatorJS over the SAME transport play uses, which is the whole
+     * point of this screen and is what it previously got wrong in both
+     * directions: a plain fetch() succeeded through the bridge on servers where
+     * play then failed, and was CORS-blocked on https servers where play works
+     * fine, because play loads it as a <script src>, which is not CORS-checked. */
+    const data = ROMM.emulatorJsData();
     try {
-      const r = await fetch(ROMM.emulatorJsData() + 'loader.js');
-      results.push(r.ok ? 'EmulatorJS reachable' : 'EmulatorJS HTTP ' + r.status);
+      if (HOST.needsNative(data)) {
+        const u = await ROMM.assetBlobUrl(data + 'loader.js');
+        URL.revokeObjectURL(u);
+        results.push('EmulatorJS reachable (via the bridge, as play loads it)');
+      } else {
+        // no-cors mirrors a <script src> load: it resolves when the resource
+        // really came back and rejects only on a genuine network failure.
+        await fetch(data + 'loader.js', { mode: 'no-cors' });
+        results.push('EmulatorJS reachable (direct, as play loads it)');
+      }
     } catch (e) {
-      results.push('EmulatorJS UNREACHABLE — ' + (e.message || 'error'));
+      results.push('EmulatorJS UNREACHABLE — '
+        + ((e && e.reason) || (e && e.nativeReason) || e.message || 'error'));
     }
   }
+  bridgeProof = await proveBridge();
   renderDiag(results.join(' · '));
 }
 
@@ -828,6 +904,17 @@ function startGame(g) {
 // EmulatorJS owns the pad during local play, but our polling is non-exclusive:
 // watch for Menu+View held ~1 s to quit back to the library. Read through GP so
 // this works whether input comes from the Gamepad API or the native host.
+/* A transient line over a running game. EmulatorJS owns the screen during play,
+ * so this is the only way to tell the player something without stopping them. */
+function flashLocalNotice(text, ms) {
+  const overlay = $('local-overlay');
+  const msg = $('local-msg');
+  if (!overlay || !msg) return;
+  msg.textContent = text;
+  overlay.classList.remove('hidden');
+  setTimeout(() => overlay.classList.add('hidden'), ms || 6000);
+}
+
 function armLocalQuitWatcher() {
   let heldSince = 0;
   const iv = setInterval(() => {
@@ -926,7 +1013,20 @@ async function startLocal(p, g) {
   window.EJS_onSaveState = async e => {
     try {
       activeStateId = await ROMM.putState(g.id, activeStateId, e.state, core);
-    } catch (_) { /* keep playing even if the upload fails */ }
+      saveStateTrouble = '';
+    } catch (err) {
+      // Never block play on an upload. But do not stay silent either: this
+      // failed for every plain-http server for as long as the bridge dropped
+      // non-string bodies, and because it was swallowed here the player saw
+      // EmulatorJS report a successful save and lost it on quit. Record it so
+      // Diagnostics can say so, and warn once on screen.
+      noteFailure('save state upload', err);
+      if (!saveStateTrouble) {
+        saveStateTrouble = (err && err.message) || 'upload failed';
+        flashLocalNotice('Save states are not reaching your server. '
+          + 'Play continues, but quick-saves will not persist.');
+      }
+    }
   };
 
   let loaderSrc;

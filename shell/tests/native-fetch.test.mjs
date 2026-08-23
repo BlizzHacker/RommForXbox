@@ -49,7 +49,10 @@ function makeShell() {
     },
   };
 
+  const received = [];              // every nfetch the host was asked to perform
+
   async function serve(msg) {
+    received.push(msg);
     const fail = failures.get(msg.url);
     if (fail) return post({ t: 'nfetchFail', id: msg.id, ...fail });
     const r = routes.get(msg.url);
@@ -83,7 +86,7 @@ function makeShell() {
     post({ t: 'nfetchEnd', id: msg.id });
   }
 
-  return { webview, sent, routes, failures, WINDOW, CHUNK };
+  return { webview, sent, routes, failures, received, WINDOW, CHUNK };
 }
 
 /* A stand-in for the platform XMLHttpRequest, so the shim's decision to
@@ -110,7 +113,8 @@ function loadBridge(shell, realXhrLog, lastRealXhr) {
   const win = {
     XMLHttpRequest: makeRealXhrStub(realXhrLog, lastRealXhr),
     chrome: { webview: shell.webview },
-    Headers, Blob, atob, setTimeout, clearTimeout, setInterval, clearInterval,
+    Headers, Blob, atob, btoa, FormData, Response, TextEncoder, TextDecoder,
+    setTimeout, clearTimeout, setInterval, clearInterval,
     performance, TypeError, URL, Map, Promise, Uint8Array, JSON, Date, Event,
     fetch: async () => { throw new Error('platform fetch should not be reached'); },
     dispatchEvent: () => { },
@@ -360,6 +364,54 @@ await check('a pass-through listener fires exactly ONCE, not twice', async () =>
   realObj.onload({ type: 'load' });
   assert.equal(loads, 1, 'load fired ' + loads + ' time(s)');
   assert.equal(states, 1, 'readystatechange fired ' + states + ' time(s)');
+});
+
+await check('a FormData body is encoded and sent, not silently dropped', async () => {
+  // Save states upload as multipart. The bridge used to keep only string bodies
+  // and send '' for anything else, so on every plain-http server RomM received
+  // an empty body, rejected it, and the app swallowed the rejection: the player
+  // saw a successful quick-save and lost it on quit. Silent data loss.
+  shell.routes.set('http://192.168.1.200/api/states', {
+    status: 200, headers: { 'content-type': 'application/json' },
+    body: new TextEncoder().encode(JSON.stringify({ id: 42 })),
+  });
+  const fd = new ctx.window.FormData();
+  fd.append('stateFile', new Blob([new Uint8Array([1, 2, 3, 4, 5])]), 'snes.state');
+  const before = shell.received.length;
+  const r = await nativeFetch('http://192.168.1.200/api/states', { method: 'POST', body: fd });
+  const j = await r.json();
+  assert.equal(j.id, 42);
+  const sent = shell.received[before];
+  assert.ok(sent.bodyBase64, 'a body was actually transmitted');
+  const raw = Buffer.from(sent.bodyBase64, 'base64');
+  assert.ok(raw.length > 5, 'multipart envelope present, got ' + raw.length + ' bytes');
+  assert.ok(raw.includes(Buffer.from([1, 2, 3, 4, 5])), 'the state bytes survived');
+  assert.match(sent.contentType, /^multipart\/form-data; boundary=/,
+    'the generated boundary is what goes on the wire, got: ' + sent.contentType);
+});
+
+await check('a string body still goes as a plain string', async () => {
+  shell.routes.set('http://192.168.1.200/api/token', {
+    status: 200, headers: { 'content-type': 'application/json' },
+    body: new TextEncoder().encode('{"access_token":"t"}'),
+  });
+  const before = shell.received.length;
+  await nativeFetch('http://192.168.1.200/api/token', {
+    method: 'POST', body: 'grant_type=password',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const sent = shell.received[before];
+  assert.equal(sent.body, 'grant_type=password');
+  assert.equal(sent.bodyBase64, undefined, 'no base64 path for a string');
+  assert.equal(sent.contentType, 'application/x-www-form-urlencoded');
+});
+
+await check('a cdn.emulatorjs.org request is counted, so a silent CDN core is visible', async () => {
+  const before = ctx.window.__cartCdnHits || 0;
+  try { await ctx.window.fetch('https://cdn.emulatorjs.org/stable/data/version.json'); } catch (_) { }
+  assert.equal(ctx.window.__cartCdnHits, before + 1, 'CDN request counted');
+  try { await ctx.window.fetch('https://romm.example.com/api/heartbeat'); } catch (_) { }
+  assert.equal(ctx.window.__cartCdnHits, before + 1, 'ordinary requests are not counted');
 });
 
 await check('the shim records what it replaced, so it is identifiable at runtime', async () => {

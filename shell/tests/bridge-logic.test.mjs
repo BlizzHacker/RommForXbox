@@ -62,6 +62,29 @@ assert.equal(isCrossOrigin(false, 'https://romm.example.com', 'https://romm.exam
   'browser, same origin as RomM: nothing is cross-origin');
 assert.equal(isCrossOrigin(true, ''), false, 'no server configured is never cross-origin');
 
+// --- threaded-core tier gate (mirrors app.js tierFor) ---
+// EmulatorJS refuses ppsspp and dosbox_pure without pthreads, which need a
+// SharedArrayBuffer, which needs a cross-origin-isolated page. The packaged app
+// is not one, so PSP and DOS were listed as locally playable and every launch
+// hit EmulatorJS's "Error for site owner / Check console" on a device with no
+// console. Gated on the real capability so an isolated deployment keeps them.
+const THREADED = new Set(['psp', 'dos']);
+const localTier = (ejsSystem, crossOriginIsolated) =>
+  !!ejsSystem && !(THREADED.has(ejsSystem) && !crossOriginIsolated);
+assert.equal(localTier('snes', false), true, 'ordinary cores play locally');
+assert.equal(localTier('psp', false), false, 'PSP is not local without isolation');
+assert.equal(localTier('dos', false), false, 'DOS is not local without isolation');
+assert.equal(localTier('psp', true), true, 'an isolated page keeps PSP local');
+assert.equal(localTier(undefined, true), false, 'an unmapped platform is never local');
+
+// --- auth vs transport classification (mirrors romm.js isAuthStatus) ---
+// Collapsing every non-2xx into AuthError told a user on a RomM too old to have
+// the pairing endpoint that their code had expired, so they regenerated codes
+// against a server with no pairing at all.
+const isAuthStatus = s => s === 400 || s === 401 || s === 403 || s === 422;
+for (const s of [400, 401, 403, 422]) assert.equal(isAuthStatus(s), true, s + ' is a credential problem');
+for (const s of [404, 500, 502, 503]) assert.equal(isAuthStatus(s), false, s + ' is a server problem, not a bad code');
+
 // --- native error classification (mirrors NativeFetch.ClassifyNetworkError) ---
 function classify(text) {
   text = text.toLowerCase();

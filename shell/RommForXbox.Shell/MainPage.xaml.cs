@@ -17,10 +17,11 @@ namespace RommForXbox.Shell
     ///   * controller input — the Gamepad API does not reach WebView2 content
     ///     (WebView2Feedback#4366), so <see cref="GamepadBridge"/> reads
     ///     Windows.Gaming.Input and posts state into the page;
-    ///   * cross-origin file access — RomM serves ROM bytes via nginx
-    ///     X-Accel-Redirect and /assets straight from nginx, neither carrying the
-    ///     CORS header its API sends, so <see cref="RommProxy"/> refetches those
-    ///     requests natively where no CORS rule applies.
+    ///   * a reachable plain-http server — the packaged page is https, so every
+    ///     http:// URL it touches is mixed content and is blocked inside the
+    ///     renderer. <see cref="NativeFetch"/> performs those requests natively,
+    ///     where no such rule applies, and streams the result back over the same
+    ///     web-message channel the gamepad uses.
     ///
     /// The app content is packaged, not remote, so nothing here depends on a
     /// server of ours being up.
@@ -29,7 +30,6 @@ namespace RommForXbox.Shell
     {
         private const string VirtualHost = "app.local";
         private readonly GamepadBridge _pads = new GamepadBridge();
-        private RommProxy _proxy;
 
         public MainPage()
         {
@@ -147,11 +147,21 @@ namespace RommForXbox.Shell
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.AreBrowserAcceleratorKeysEnabled = false;
 
-            _proxy = new RommProxy(VirtualHost);
-            // Filter everything and decide per request: the handler passes local
-            // and non-CORS-sensitive requests straight through.
-            core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
-            core.WebResourceRequested += _proxy.OnWebResourceRequested;
+            /* The WebResourceRequested proxy is NOT wired up, deliberately.
+             *
+             * On this console a CreateWebResourceResponse carrying a body stream
+             * is never delivered to the renderer (proven on a Series X, commit
+             * a0af21b), so the handler could not serve a single byte. And it can
+             * never even SEE the requests it was written for: mixed content is
+             * blocked in Blink, upstream of WebView2's network layer. What the
+             * wildcard filter did do was marshal every packaged file, every
+             * blob: and every cover through a managed round trip on the UI
+             * thread to return null — pure cost on a memory- and CPU-tight
+             * device, and one more live variable in the play path.
+             *
+             * RommProxy.cs and RoutedUrl.cs are kept: they are covered by CI
+             * tests and remain the reference for the routed-URL scheme if a
+             * future WebView2 fixes the delivery bug. */
 
             // The console's WebView2 maps a controller gesture to history
             // back and forward, which yanks the page out from under the user

@@ -25,6 +25,10 @@ const ROMM = (() => {
     constructor(message, reason) { super(message); this.reason = reason || message; }
   }
 
+  // The statuses that actually mean "those credentials/that code were wrong".
+  // Anything else is a server or network fault wearing an auth costume.
+  const isAuthStatus = s => s === 400 || s === 401 || s === 403 || s === 422;
+
   // Turn a caught renderer/native error into a NetError that keeps its cause.
   function netError(e) {
     if (e instanceof NetError) return e;
@@ -94,7 +98,21 @@ const ROMM = (() => {
     } catch (_) { return false; }
   }
 
-  const json = async (path, opts) => (await req(path, opts)).json();
+  /* req() wraps only the request. The body is read here, and a failure reading
+   * it used to escape netError() completely -- so a reverse proxy or captive
+   * portal answering with an HTML sign-in page produced "Could not reach
+   * <server>. Check the address, the port, and that this console is on the same
+   * network", which is the wrong conclusion from the one server that definitely
+   * answered. */
+  const json = async (path, opts) => {
+    const r = await req(path, opts);
+    try {
+      return await r.json();
+    } catch (e) {
+      if (e && e.nativeReason) throw netError(e);
+      throw new NetError('bad-json', 'bad-json');
+    }
+  };
 
   /* ---------------------------------------------------------------- auth */
 
@@ -109,7 +127,19 @@ const ROMM = (() => {
       throw netError(e);
     }
     if (!r.ok) throw new NetError('HTTP ' + r.status, 'http-' + r.status);
-    const j = await r.json().catch(() => null);
+    let j;
+    try {
+      j = await r.json();
+    } catch (e) {
+      // A body that failed to ARRIVE is a transport fault, not a verdict about
+      // what the server is -- and the difference matters more than it looks:
+      // probeAny treats 'not-romm' as a definitive answer and stops trying the
+      // other scheme, so one dropped packet could permanently block the
+      // http/https fallback the user depends on. Only a body that arrived and
+      // was not RomM's JSON earns that tag.
+      if (e && e.nativeReason) throw netError(e);
+      throw new NetError('not-romm', 'not-romm');
+    }
     if (!j || !j.SYSTEM || !j.SYSTEM.VERSION) throw new NetError('not-romm', 'not-romm');
     return { version: j.SYSTEM.VERSION };
   }
@@ -125,6 +155,11 @@ const ROMM = (() => {
         const { version } = await probe(server);
         return { server, version };
       } catch (e) {
+        // Which candidate failed is part of the message. Reporting the last one
+        // in the list named the https attempt for someone who typed a bare LAN
+        // IP, describing a port they never asked about while discarding the
+        // http attempt's error, which was the informative one.
+        e.server = server;
         last = e;
         if (onFail) onFail(server, e);
         // A server that answered but is not RomM is a definite answer; trying
@@ -143,6 +178,13 @@ const ROMM = (() => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     }).catch(e => { throw netError(e); });
+    // Only a credential rejection is an AuthError. Collapsing every non-2xx
+    // into one meant a RomM too old to have this endpoint answered 404 and the
+    // user was told their pairing code had expired -- so they generated code
+    // after code, forever, against a server that has no pairing at all.
+    if (!r.ok && !isAuthStatus(r.status)) {
+      throw new NetError('HTTP ' + r.status, 'http-' + r.status);
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.raw_token) throw new AuthError('pair-failed');
     return j.raw_token;
@@ -161,6 +203,9 @@ const ROMM = (() => {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
     }).catch(e => { throw netError(e); });
+    if (!r.ok && !isAuthStatus(r.status)) {
+      throw new NetError('HTTP ' + r.status, 'http-' + r.status);
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.access_token) throw new AuthError(j.detail || 'signin-failed');
     return { token: j.access_token, refresh: j.refresh_token || '' };

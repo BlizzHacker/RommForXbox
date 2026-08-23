@@ -179,6 +179,34 @@ var nativeFetch = window.__cartNativeFetch || (() => {
       contentType: headers['Content-Type'] || headers['content-type'] || 'application/json',
     };
 
+    /* Non-string request bodies.
+     *
+     * Save states are uploaded as FormData. The old code kept only string
+     * bodies and sent '' for anything else, so on a plain-http server every
+     * quick-save reached RomM with an EMPTY body, was rejected, and the
+     * rejection was swallowed by a catch that exists to keep the game running.
+     * The player saw EmulatorJS report a successful save and lost it on quit,
+     * with nothing said anywhere. Encoding the body here is what makes save
+     * states actually persist on the configuration this bridge exists for.
+     *
+     * Response() does the multipart encoding, boundary and all, and reports the
+     * exact Content-Type that goes with it — which must be the generated one,
+     * never a caller-supplied guess, or the boundary will not match. */
+    const encodeBody = async () => {
+      const b = o.body;
+      if (b === undefined || b === null || typeof b === 'string') return;
+      const packed = new Response(b);
+      const ct = packed.headers.get('content-type');
+      if (ct) msg.contentType = ct;
+      const bytes = new Uint8Array(await packed.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      }
+      msg.bodyBase64 = btoa(bin);
+      msg.body = '';
+    };
+
     return new Promise((resolve, reject) => {
       const parts = [];
       let total = 0, got = 0, timer = null, silence = HEAD_SILENCE_MS;
@@ -235,12 +263,29 @@ var nativeFetch = window.__cartNativeFetch || (() => {
 
       pending.set(id, entry);
       entry.touch();
-      try { wv2.postMessage(msg); }
-      catch (err) { clear(); reject(err); failParts(err); }
+      encodeBody().then(() => {
+        wv2.postMessage(msg);
+      }).catch(err => { clear(); reject(err); failParts(err); });
     });
   };
 })();
 window.__cartNativeFetch = nativeFetch;
+
+/* When EmulatorJS cannot get a core from the user's own server it silently
+ * retries against cdn.emulatorjs.org and carries on. That is genuinely useful
+ * when a server is missing a core — but it also means a broken local path looks
+ * like a working one, which is exactly how this class of bug stays
+ * misdiagnosed, and it is a third-party download an app that says it only talks
+ * to your own server should not make quietly. Counted, not blocked: Diagnostics
+ * reports it, so "it works for me" stops being unfalsifiable. */
+window.__cartCdnHits = window.__cartCdnHits || 0;
+function countIfThirdParty(url) {
+  try {
+    if (/(^|\/\/|\.)cdn\.emulatorjs\.org\//i.test(String(url || ''))) {
+      window.__cartCdnHits++;
+    }
+  } catch (_) { /* counting must never break a request */ }
+}
 
 /* EmulatorJS fetches cores and ROM bytes with its own calls, which we do not
  * route. On a plain-http server those are mixed-content-blocked. So inside the
@@ -252,6 +297,7 @@ window.__cartNativeFetch = nativeFetch;
   const orig = window.fetch.bind(window);
   const wrapped = function (input, init) {
     const url = typeof input === 'string' ? input : (input && input.url) || '';
+    countIfThirdParty(url);
     if (HOST.needsNative(url)) return nativeFetch(url, init || {});
     return orig(input, init);
   };
@@ -331,6 +377,7 @@ window.__cartNativeFetch = nativeFetch;
     };
 
     self.open = function (method, url, async) {
+      countIfThirdParty(url);
       native = HOST.needsNative(url) ? { method, url } : null;
       if (native) { setState(1); return; }
       return realXhr().open(method, url, async === undefined ? true : async);

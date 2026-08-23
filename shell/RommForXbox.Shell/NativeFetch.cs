@@ -124,11 +124,29 @@ namespace RommForXbox.Shell
                             req.Headers.TryAddWithoutValidation(kv.Key, kv.Value.GetString());
                         }
                     }
+                    // A binary body (a save state, uploaded as multipart) arrives
+                    // base64'd, with the Content-Type the renderer generated —
+                    // which carries the multipart boundary and must be used
+                    // verbatim, so it is set on the content rather than parsed
+                    // out of the caller's headers.
+                    var bodyB64 = msg.GetNamedString("bodyBase64", string.Empty);
                     var bodyText = msg.GetNamedString("body", string.Empty);
-                    if (bodyText.Length > 0)
+                    var contentType = msg.GetNamedString("contentType", "application/json");
+                    if (bodyB64.Length > 0)
                     {
-                        var ct = msg.GetNamedString("contentType", "application/json");
-                        req.Content = new StringContent(bodyText, Encoding.UTF8, ct);
+                        var raw = Convert.FromBase64String(bodyB64);
+                        var content = new ByteArrayContent(raw);
+                        try
+                        {
+                            content.Headers.ContentType =
+                                System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
+                        }
+                        catch (FormatException) { /* leave it unset rather than fail the upload */ }
+                        req.Content = content;
+                    }
+                    else if (bodyText.Length > 0)
+                    {
+                        req.Content = new StringContent(bodyText, Encoding.UTF8, contentType);
                     }
 
                     HttpResponseMessage resp;
