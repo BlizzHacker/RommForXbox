@@ -289,12 +289,7 @@ window.__cartNativeFetch = nativeFetch;
       progress: [], load: [], error: [], loadend: [], readystatechange: [],
     };
     const realXhr = () => {
-      if (!real) {
-        real = new Real();
-        for (const type in listeners) {
-          for (const fn of listeners[type]) real.addEventListener(type, fn);
-        }
-      }
+      if (!real) real = new Real();
       return real;
     };
     self.readyState = 0;
@@ -318,16 +313,21 @@ window.__cartNativeFetch = nativeFetch;
       emit('readystatechange', { type: 'readystatechange' });
     };
 
-    // Listeners can be registered before open() decides which path this is, so
-    // they are recorded here and replayed onto the delegate if one is built.
+    /* One registry, one dispatcher.
+     *
+     * Listeners live here and ONLY here — they are never also attached to the
+     * delegate. On the pass-through path send() hooks the delegate's on* slots
+     * and funnels them into emit(), so a listener attached to both would be
+     * called twice for every event: two 'load's for one response, and every
+     * progress event doubled. That path carries all https traffic in the shell
+     * and all of RomM's own /console pages, so it is the common case, not an
+     * edge one. */
     self.addEventListener = (type, fn) => {
       if (listeners[type]) listeners[type].push(fn);
-      if (real) { try { real.addEventListener(type, fn); } catch (_) { } }
     };
     self.removeEventListener = (type, fn) => {
       const a = listeners[type];
       if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); }
-      if (real) { try { real.removeEventListener(type, fn); } catch (_) { } }
     };
 
     self.open = function (method, url, async) {

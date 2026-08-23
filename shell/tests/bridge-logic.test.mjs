@@ -38,6 +38,30 @@ assert.equal(needsNative(false, 'http://192.168.1.50'), false, 'browser never na
 assert.equal(needsNative(true, 'http://192.168.1.50/api/roms', 'http:'), false,
   'an http page (RomM /console) reaches its own server directly');
 
+// --- isCrossOrigin decision table (mirrors app.js) ---
+// The cross-origin hint tells the user to add Access-Control-Allow-Origin to a
+// proxy. That is right for exactly one cohort and actively misleading for the
+// others, and the gate is NOT "am I in the app":
+//   * plain browser, remote RomM  -> real CORS, show it
+//   * shell + https RomM          -> the RENDERER fetches it, app.local really
+//                                    is another origin, RomM really omits the
+//                                    header on ROM bytes -> show it
+//   * shell + http RomM           -> NATIVE code fetches it, no CORS exists ->
+//                                    never show it (this was the reported bug)
+const isCrossOrigin = (hasHost, server, pageOrigin = 'https://app.local') => {
+  if (needsNative(hasHost, server)) return false;
+  try { return new URL(server).origin !== pageOrigin; } catch (_) { return false; }
+};
+assert.equal(isCrossOrigin(true, 'http://192.168.1.200'), false,
+  'shell + http: native fetch, so the CORS hint must never appear');
+assert.equal(isCrossOrigin(true, 'https://romm.example.com'), true,
+  'shell + https: renderer fetch against a real cross origin, hint is correct');
+assert.equal(isCrossOrigin(false, 'https://romm.example.com', 'https://xbox.moveweight.com'), true,
+  'browser + remote RomM: hint is correct');
+assert.equal(isCrossOrigin(false, 'https://romm.example.com', 'https://romm.example.com'), false,
+  'browser, same origin as RomM: nothing is cross-origin');
+assert.equal(isCrossOrigin(true, ''), false, 'no server configured is never cross-origin');
+
 // --- native error classification (mirrors NativeFetch.ClassifyNetworkError) ---
 function classify(text) {
   text = text.toLowerCase();

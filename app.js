@@ -341,17 +341,21 @@ function crossOriginFileHint(what) {
 
 /* True only where cross-origin is actually the rule in force.
  *
- * Inside the Xbox app it never is. The page is served from https://app.local,
- * so a plain comparison of origins is true for EVERY server anyone could
- * configure — and the requests are not made by the renderer anyway, they are
- * made by native code, which no CORS rule applies to. Answering "yes, cross
- * origin" there turned every download failure, whatever its cause, into a
- * lecture about adding Access-Control-Allow-Origin to a proxy, which could not
- * have helped and sent at least one user off to reconfigure a server that was
- * working correctly. In a browser the check is real, and stays.
+ * The page is served from https://app.local, so a bare comparison of origins is
+ * true for EVERY server anyone could configure — which is how every download
+ * failure in the shell, whatever its cause, came out as a lecture about adding
+ * Access-Control-Allow-Origin to a proxy.
+ *
+ * But the answer is not simply "never in the shell". It depends on who makes
+ * the request. A plain-http server is fetched by native code, which no CORS
+ * rule touches, so the hint is meaningless there. An https server is fetched by
+ * the renderer itself (HOST.fetch takes the direct branch), app.local really is
+ * a different origin, and RomM really does ship ROM bytes through nginx without
+ * the header — so for that user the hint is correct, actionable, and the only
+ * message that would help. needsNative() is exactly that distinction.
  */
 const isCrossOrigin = () => {
-  if (HOST.present) return false;
+  if (HOST.needsNative(CFG.server)) return false;
   try { return new URL(CFG.server).origin !== location.origin; }
   catch (_) { return false; }
 };

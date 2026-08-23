@@ -89,7 +89,7 @@ function makeShell() {
 /* A stand-in for the platform XMLHttpRequest, so the shim's decision to
  * DELEGATE (rather than claim) a request is observable. Anything reaching this
  * is a request the native bridge correctly declined to touch. */
-function makeRealXhrStub(log) {
+function makeRealXhrStub(log, lastRef) {
   return function RealXhr() {
     this.readyState = 0; this.status = 0; this.statusText = ''; this.response = null;
     this.addEventListener = () => { };
@@ -101,13 +101,14 @@ function makeRealXhrStub(log) {
     this.abort = () => log.push(['abort']);
     this.overrideMimeType = () => { };
     this.send = () => { log.push(['send']); };
+    lastRef.value = this;
   };
 }
 
 /* Load the real host-bridge.js into a context that looks enough like a page. */
-function loadBridge(shell, realXhrLog) {
+function loadBridge(shell, realXhrLog, lastRealXhr) {
   const win = {
-    XMLHttpRequest: makeRealXhrStub(realXhrLog),
+    XMLHttpRequest: makeRealXhrStub(realXhrLog, lastRealXhr),
     chrome: { webview: shell.webview },
     Headers, Blob, atob, setTimeout, clearTimeout, setInterval, clearInterval,
     performance, TypeError, URL, Map, Promise, Uint8Array, JSON, Date, Event,
@@ -129,6 +130,7 @@ function loadBridge(shell, realXhrLog) {
   };
   ctx.globalThis = ctx;
   vm.runInContext(bridgeSrc, ctx, { filename: 'host-bridge.js' });
+  Object.defineProperty(ctx.window, '__lastRealXhr', { get: () => lastRealXhr.value });
   return ctx;
 }
 
@@ -148,7 +150,8 @@ const check = (name, fn) => fn().then(
 
 const shell = makeShell();
 const realXhrLog = [];
-const ctx = loadBridge(shell, realXhrLog);
+const lastRealXhr = { value: null };
+const ctx = loadBridge(shell, realXhrLog, lastRealXhr);
 const nativeFetch = ctx.window.__cartNativeFetch;
 
 // A body far past the old 24MB single-message cap, and past one chunk, so this
@@ -336,6 +339,27 @@ await check('on an http page the shims stand down entirely (RomM /console)', asy
   } finally {
     ctx.location.protocol = 'https:';
   }
+});
+
+await check('a pass-through listener fires exactly ONCE, not twice', async () => {
+  // Listeners live in one registry and are dispatched by emit() alone. Attaching
+  // them to the delegate as well doubles every event on the pass-through path,
+  // which carries all https traffic in the shell and all of RomM's /console.
+  const X = ctx.window.XMLHttpRequest;
+  const x = new X();
+  let loads = 0, states = 0;
+  x.addEventListener('load', () => loads++);
+  x.addEventListener('readystatechange', () => states++);
+  x.open('GET', 'https://romm.example.com/api/heartbeat', true);
+  x.send();
+  // Drive the delegate's handlers the way a real XHR would.
+  const realObj = realXhrLog.at(-1) && ctx.window.__lastRealXhr;
+  assert.ok(realObj, 'delegate was constructed');
+  realObj.readyState = 4; realObj.status = 200;
+  realObj.onreadystatechange({ type: 'readystatechange' });
+  realObj.onload({ type: 'load' });
+  assert.equal(loads, 1, 'load fired ' + loads + ' time(s)');
+  assert.equal(states, 1, 'readystatechange fired ' + states + ' time(s)');
 });
 
 await check('the shim records what it replaced, so it is identifiable at runtime', async () => {
