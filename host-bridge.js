@@ -208,7 +208,10 @@ var nativeFetch = window.__cartNativeFetch || (() => {
           }, silence);
         },
         head(m) {
-          total = Number(m.length) || 0;
+          // The shell sends -1 when the server gave no Content-Length (a
+          // chunked response). Zero, not -1, is the "unknown" the progress
+          // callers expect; -1 would render as a negative percentage.
+          total = Number(m.length) > 0 ? Number(m.length) : 0;
           resolve(makeResponse(m, { parts: partsDone }));
           if (o.onProgress) { try { o.onProgress(0, total); } catch (_) { } }
         },

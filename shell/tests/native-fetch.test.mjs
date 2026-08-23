@@ -60,7 +60,10 @@ function makeShell() {
 
     post({
       t: 'nfetchHead', id: msg.id, status: r.status, statusText: r.statusText || 'OK',
-      url: msg.url, length: r.body.length, headers: r.headers || {},
+      url: msg.url,
+      // The shell sends -1 for a chunked response with no Content-Length.
+      length: r.unknownLength ? -1 : r.body.length,
+      headers: r.headers || {},
     });
 
     for (let off = 0; off < r.body.length; off += CHUNK) {
@@ -198,6 +201,18 @@ await check('every chunk is acknowledged, so the host can pace itself', async ()
   const acks = shell.sent.filter(m => m.t === 'nfetchAck').length - before;
   const expected = Math.ceil(BIG.length / shell.CHUNK);
   assert.equal(acks, expected, `acked ${acks} of ${expected} chunks`);
+});
+
+await check('an unknown length reports as 0, never a negative percentage', async () => {
+  shell.routes.set('http://192.168.1.200/chunked', {
+    status: 200, headers: {}, body: BIG, unknownLength: true,
+  });
+  const seen = [];
+  const r = await nativeFetch('http://192.168.1.200/chunked', {
+    onProgress: (got, total) => seen.push(total),
+  });
+  await r.blob();
+  assert.ok(seen.every(t => t === 0), 'unknown total is 0, got: ' + [...new Set(seen)]);
 });
 
 await check('an http error status resolves (it does not reject) with ok=false', async () => {
