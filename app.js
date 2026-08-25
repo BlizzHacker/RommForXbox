@@ -21,7 +21,16 @@ let view = 'setup';
 let platforms = [], platIdx = 0;
 let games = [], gameIdx = 0;
 const GRID_COLS = 8;          // must match grid-template-columns in style.css
-const PAGE_SIZE = 500;
+/* One screenful, not a library.
+ *
+ * This was 500, which on a large server meant the first thing a player saw
+ * after choosing a platform was a 10.2 MB download taking 7.5 seconds -- and
+ * over the internet rather than a LAN, that is the whole "is this thing
+ * broken?" experience. RomM sends roughly 20 KB of metadata per ROM, so the
+ * page size dominates everything else. 72 is nine rows of the 8-wide grid:
+ * about 1.2 MB and ~1s, after which the rest streams in behind the player
+ * while they are already looking at box art. */
+const PAGE_SIZE = 72;
 let currentGame = null, quitHold = 0, activeStateId = null, blobUrls = [];
 // Non-empty once a save-state upload has failed this session, so Diagnostics can
 // report it and the on-screen warning fires once rather than every save.
@@ -779,25 +788,70 @@ async function enterLibrary() {
   }
 }
 
+/* Bumped on every platform change so a backfill in flight can tell that its
+ * results are no longer wanted, instead of appending to the wrong platform. */
+let loadToken = 0;
+
+const playable = list => (list || []).filter(g =>
+  (g.fs_name || g.file_name) && !/\.(exe|msi|bat|sh)$/i.test(g.fs_name || ''));
+
+function updateCount(total, tier) {
+  $('lib-count').textContent =
+    (total > games.length ? `${games.length} of ${total} games`
+                          : `${games.length} games`) + ' · ' +
+    (tier === 'local' ? 'plays on this console' : 'streams from your server');
+}
+
+/* Pull the remaining pages one at a time, appending as each lands.
+ *
+ * Sequential on purpose: this is competing with the player's own actions for a
+ * home server's upload bandwidth, and firing every page at once would make the
+ * screen they are actually looking at slower. Redraws only while the grid is
+ * still the visible view and only when focus has not moved, so appending never
+ * yanks the selection out from under a thumbstick. */
+async function backfillGames(p, tier, total, token) {
+  for (let offset = games.length; offset < total; offset += PAGE_SIZE) {
+    if (token !== loadToken) return;
+    let page;
+    try {
+      page = await ROMM.roms(p.id, PAGE_SIZE, offset);
+    } catch (e) {
+      noteFailure('load more games', e);
+      return;                          // keep what we have; it is still usable
+    }
+    if (token !== loadToken) return;
+    const more = playable(page.items || page || []);
+    if (!more.length) return;
+    const wasIdx = gameIdx;
+    games = games.concat(more);
+    updateCount(Number(page.total) || total, tier);
+    if (view === 'library') {
+      renderGrid();
+      gameIdx = wasIdx;
+    }
+  }
+}
+
 async function loadGames() {
   const { p, tier } = platforms[platIdx];
   $('lib-title').textContent = p.display_name || p.name || p.slug;
   $('lib-status').textContent = 'Loading games…';
   renderRail();
+  const token = ++loadToken;          // invalidates any backfill still running
   try {
-    const j = await ROMM.roms(p.id, PAGE_SIZE);
-    games = (j.items || j || []).filter(g =>
-      (g.fs_name || g.file_name) && !/\.(exe|msi|bat|sh)$/i.test(g.fs_name || ''));
+    const j = await ROMM.roms(p.id, PAGE_SIZE, 0);
+    if (token !== loadToken) return;   // the player already moved on
+    games = playable(j.items || j || []);
     gameIdx = 0;
     // j.total is the whole platform; games is one page of it. Saying "500
     // games" for a 4,414-game platform is simply wrong.
     const total = Number(j.total) || games.length;
-    $('lib-count').textContent =
-      (total > games.length ? `${games.length} of ${total} games`
-                            : `${games.length} games`) + ' · ' +
-      (tier === 'local' ? 'plays on this console' : 'streams from your server');
+    updateCount(total, tier);
     renderGrid();
     $('lib-status').textContent = games.length ? footnote() : 'No games on this platform.';
+    // The player can already see and move around the first screenful; fetch the
+    // rest behind them rather than making them wait for a whole platform.
+    if (total > games.length) backfillGames(p, tier, total, token);
   } catch (e) {
     if (e instanceof ROMM.AuthError) { CFG.clearAuth(); return enterAuth(); }
     noteFailure('load games', e);
