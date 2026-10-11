@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,6 +72,52 @@ namespace RommForXbox.Shell
 
         private static readonly HttpClient Http = CreateClient();
 
+        /* The insecure lane, for one opt-in setting: an operator whose RomM
+         * answers https with a self-signed certificate. The renderer can never
+         * be told to trust one, and UWP's System.Net.Http handler has no
+         * certificate callback either (it is a shim over WinHTTP and throws
+         * PlatformNotSupportedException) — the platform lever is
+         * HttpBaseProtocolFilter.IgnorableServerCertificateErrors, which lives
+         * on Windows.Web.Http. So requests the page marks insecure AND the
+         * shell's own stored setting allows go through this second client.
+         * Two conditions, never one: the page proposes, the shell decides. */
+        private static volatile bool _allowInsecure;
+        private static Windows.Web.Http.HttpClient _insecureHttp;
+        private static readonly object InsecureLock = new object();
+
+        /// <summary>
+        /// The shell's persisted copy of the operator's opt-in. Set at startup
+        /// and whenever the page posts {t:'setInsecure'}; a per-message request
+        /// is honoured only while this is true.
+        /// </summary>
+        public static bool AllowInsecure
+        {
+            get { return _allowInsecure; }
+            set { _allowInsecure = value; }
+        }
+
+        private static Windows.Web.Http.HttpClient InsecureClient()
+        {
+            lock (InsecureLock)
+            {
+                if (_insecureHttp == null)
+                {
+                    var filter = new Windows.Web.Http.Filters.HttpBaseProtocolFilter();
+                    // Enumerated, not "everything": these are the failures a
+                    // self-signed LAN certificate actually produces. Revoked
+                    // and other chain failures stay fatal even in this lane.
+                    filter.IgnorableServerCertificateErrors.Add(
+                        Windows.Security.Cryptography.Certificates.ChainValidationResult.Untrusted);
+                    filter.IgnorableServerCertificateErrors.Add(
+                        Windows.Security.Cryptography.Certificates.ChainValidationResult.InvalidName);
+                    filter.IgnorableServerCertificateErrors.Add(
+                        Windows.Security.Cryptography.Certificates.ChainValidationResult.Expired);
+                    _insecureHttp = new Windows.Web.Http.HttpClient(filter);
+                }
+                return _insecureHttp;
+            }
+        }
+
         // One gate per in-flight request, released by the renderer's acks.
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates =
             new ConcurrentDictionary<string, SemaphoreSlim>();
@@ -108,6 +155,15 @@ namespace RommForXbox.Shell
             var id = msg.GetNamedString("id", string.Empty);
             var url = msg.GetNamedString("url", string.Empty);
             var method = msg.GetNamedString("method", "GET");
+
+            // The page asked for the certificate bypass AND the operator
+            // enabled it in the shell's own settings. Either half missing
+            // and the request takes the normal, fully-validated path.
+            if (msg.GetNamedBoolean("insecure", false) && _allowInsecure)
+            {
+                await HandleInsecure(web, msg, id, url, method);
+                return;
+            }
 
             var gate = new SemaphoreSlim(WindowChunks, int.MaxValue);
             Gates[id] = gate;
@@ -233,6 +289,172 @@ namespace RommForXbox.Shell
                 Gates.TryRemove(id, out gone);
                 gate.Dispose();
             }
+        }
+
+        /// <summary>
+        /// The certificate-bypass twin of <see cref="Handle"/>: same message
+        /// protocol, same streaming, same flow control, but the request goes
+        /// through a Windows.Web.Http client whose filter ignores
+        /// untrusted/invalid-name/expired certs. Kept as its own method rather
+        /// than a branch inside Handle because Windows.Web.Http and
+        /// System.Net.Http do not share request/response types — and because
+        /// the fully-validated path must stay untouched: this lane is opt-in,
+        /// narrow, and a bug in it must never affect a normal request.
+        /// </summary>
+        private static async Task HandleInsecure(CoreWebView2 web, JsonObject msg,
+                                                 string id, string url, string method)
+        {
+            var gate = new SemaphoreSlim(WindowChunks, int.MaxValue);
+            Gates[id] = gate;
+            var headSent = false;
+
+            try
+            {
+                var http = InsecureClient();
+                using (var req = new Windows.Web.Http.HttpRequestMessage(
+                           new Windows.Web.Http.HttpMethod(method), new Uri(url)))
+                {
+                    if (msg.ContainsKey("headers") && msg["headers"].ValueType == JsonValueType.Object)
+                    {
+                        foreach (var kv in msg.GetNamedObject("headers"))
+                        {
+                            req.Headers.TryAppendWithoutValidation(kv.Key, kv.Value.GetString());
+                        }
+                    }
+                    var bodyB64 = msg.GetNamedString("bodyBase64", string.Empty);
+                    var bodyText = msg.GetNamedString("body", string.Empty);
+                    var contentType = msg.GetNamedString("contentType", "application/json");
+                    if (bodyB64.Length > 0)
+                    {
+                        var raw = Convert.FromBase64String(bodyB64);
+                        // byte[] -> IBuffer via the WinRT extension imported at
+                        // the top; HttpBufferContent then wraps it without a copy.
+                        var content = new Windows.Web.Http.HttpBufferContent(raw.AsBuffer());
+                        try
+                        {
+                            content.Headers.ContentType =
+                                Windows.Web.Http.Headers.HttpMediaTypeHeaderValue
+                                    .Parse(contentType);
+                        }
+                        catch (FormatException) { /* leave it unset rather than fail the upload */ }
+                        req.Content = content;
+                    }
+                    else if (bodyText.Length > 0)
+                    {
+                        req.Content = new Windows.Web.Http.HttpStringContent(
+                            bodyText, System.Text.UnicodeEncoding.UTF8, contentType);
+                    }
+
+                    Windows.Web.Http.HttpResponseMessage resp;
+                    using (var cts = new CancellationTokenSource(HeaderTimeout))
+                    {
+                        resp = await http.SendRequestAsync(
+                            req, Windows.Web.Http.HttpCompletionOption.ResponseHeadersRead)
+                            .AsTask(cts.Token);
+                    }
+                    using (resp)
+                    {
+                        // Windows.Web.Http exposes Content-Length typed; a
+                        // string probe of the header map is both wrong-shaped
+                        // and misses the chunked case (null).
+                        var len = resp.Content.Headers.ContentLength.HasValue
+                            ? (long)resp.Content.Headers.ContentLength.Value
+                            : -1L;
+                        if (len > MaxBodyBytes)
+                        {
+                            SendFail(web, id, "too-large",
+                                "This file is " + Megabytes(len) + " MB. The console can "
+                                + "download up to " + Megabytes(MaxBodyBytes) + " MB; disc-sized "
+                                + "games play through a stream server instead.");
+                            return;
+                        }
+
+                        SendHead(web, id, resp, len);
+                        headSent = true;
+
+                        var total = 0L;
+                        var buffer = new byte[ChunkBytes];
+                        using (var stream = resp.Content.ReadAsInputStreamAsync()
+                                             .AsStreamForRead())
+                        using (var readCts = new CancellationTokenSource())
+                        {
+                            for (;;)
+                            {
+                                readCts.CancelAfter(ReadTimeout);
+                                var read = await stream.ReadAsync(
+                                    buffer, 0, buffer.Length, readCts.Token);
+                                if (read <= 0) break;
+
+                                total += read;
+                                if (total > MaxBodyBytes)
+                                {
+                                    SendFail(web, id, "too-large",
+                                        "The download passed the " + Megabytes(MaxBodyBytes)
+                                        + " MB limit for this console.");
+                                    return;
+                                }
+
+                                if (!await gate.WaitAsync(AckTimeout))
+                                {
+                                    return;
+                                }
+
+                                SendChunk(web, id, buffer, read);
+                            }
+                        }
+
+                        SendEnd(web, id);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                SendFail(web, id, "timeout", headSent
+                    ? "The server stopped sending partway through the download."
+                    : "The server did not respond within "
+                      + (int)HeaderTimeout.TotalSeconds + " seconds.");
+            }
+            catch (Exception ex)
+            {
+                // Windows.Web.Http wraps failures with an HResult rather than
+                // the message text ClassifyNetworkError knows; the flattened
+                // chain still carries the inner wording in practice.
+                SendFail(web, id, ClassifyNetworkError(ex), Flatten(ex));
+            }
+            finally
+            {
+                SemaphoreSlim gone;
+                Gates.TryRemove(id, out gone);
+                gate.Dispose();
+            }
+        }
+
+        private static void SendHead(CoreWebView2 web, string id,
+                                     Windows.Web.Http.HttpResponseMessage resp, long length)
+        {
+            var headers = new JsonObject();
+            foreach (var h in resp.Headers)
+            {
+                headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
+            }
+            foreach (var h in resp.Content.Headers)
+            {
+                headers[h.Key] = JsonValue.CreateStringValue(string.Join(", ", h.Value));
+            }
+
+            var reply = new JsonObject
+            {
+                ["t"] = JsonValue.CreateStringValue("nfetchHead"),
+                ["id"] = JsonValue.CreateStringValue(id),
+                ["status"] = JsonValue.CreateNumberValue((int)resp.StatusCode),
+                ["statusText"] = JsonValue.CreateStringValue(resp.ReasonPhrase ?? string.Empty),
+                ["url"] = JsonValue.CreateStringValue(
+                    resp.RequestMessage != null && resp.RequestMessage.RequestUri != null
+                        ? resp.RequestMessage.RequestUri.ToString() : string.Empty),
+                ["length"] = JsonValue.CreateNumberValue(length),
+                ["headers"] = headers,
+            };
+            Send(web, reply);
         }
 
         private static long Megabytes(long bytes)

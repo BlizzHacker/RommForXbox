@@ -10,6 +10,12 @@ const CFG = (() => {
     // 7-day refresh token; a paired client token is long-lived and has neither.
     refresh: 'romm_refresh', mode: 'romm_auth_mode',
     schema: 'romm_schema',
+    // Opt-in: accept an invalid HTTPS certificate (self-signed, expired,
+    // wrong name) from the RomM server. Off by default — it disables the
+    // identity check TLS exists for. Inside the shell this routes https
+    // server traffic through the native fetch bridge, which can be told to
+    // accept what the renderer never will (see HOST.needsNative).
+    insecure: 'romm_insecure_certs',
     // Opt-in: hand the whole page to RomM's own /console web UI instead of the
     // built-in library. Off by default, because /console runs on the server's
     // origin with cookie auth and so asks the user to sign in AGAIN after they
@@ -83,6 +89,8 @@ const CFG = (() => {
     set mode(v) { set(K.mode, v); },
     get useRommWebUi() { return get(K.webui) === '1'; },
     set useRommWebUi(v) { set(K.webui, v ? '1' : ''); },
+    get insecureCerts() { return get(K.insecure) === '1'; },
+    set insecureCerts(v) { set(K.insecure, v ? '1' : ''); },
     clearAuth() { set(K.token, ''); set(K.refresh, ''); set(K.mode, ''); },
     reset() { for (const k of Object.values(K)) localStorage.removeItem(k); },
     SCHEMA,
