@@ -35,19 +35,56 @@ var HOST = window.HOST || (() => {
 
     /* True when a URL must be fetched by native code rather than the renderer.
      *
-     * The rule is mixed content, not the scheme on its own: a plain-http URL is
-     * blocked in the renderer only when the PAGE is secure. That distinction
-     * matters because the shell injects this file into every document,
-     * including RomM's own /console pages — and when the user has opted into
-     * those, the page itself is served from the http server, so its requests
-     * are same-origin and perfectly legal. Routing them through the bridge
-     * would be pure overhead on the exact pages that run a game. Read at call
-     * time, never cached: an injected copy runs before the document has settled
-     * on its URL. */
+     * Two cases:
+     *
+     *   1. Mixed content: a plain-http URL is blocked in the renderer only
+     *      when the PAGE is secure. That distinction matters because the shell
+     *      injects this file into every document, including RomM's own
+     *      /console pages — and when the user has opted into those, the page
+     *      itself is served from the http server, so its requests are
+     *      same-origin and perfectly legal. Routing them through the bridge
+     *      would be pure overhead on the exact pages that run a game.
+     *
+     *   2. The operator accepted invalid certificates (CFG.insecureCerts) and
+     *      this https URL belongs to their own server: the renderer can never
+     *      be told to trust a self-signed cert, but native code can. Scoped to
+     *      the configured server/stream hosts — a blanket "ignore TLS" for any
+     *      URL a page asks for would be a MITM tool, not a setting.
+     *
+     * Read at call time, never cached: an injected copy runs before the
+     * document has settled on its URL. */
     needsNative(url) {
       if (!wv) return false;
-      if (!/^http:\/\//i.test(String(url || ''))) return false;
-      return location.protocol === 'https:';
+      const u = String(url || '');
+      if (/^http:\/\//i.test(u)) return location.protocol === 'https:';
+      return this.insecureWanted(u);
+    },
+
+    /* Whether this https URL should ride the native bridge with certificate
+     * checking off: the opt-in is on AND the URL's host is one of the
+     * operator's own configured servers. Defensive about CFG — this file is
+     * injected into documents (RomM /console) where config.js never loads. */
+    insecureWanted(url) {
+      if (!wv) return false;
+      if (!/^https:\/\//i.test(String(url || ''))) return false;
+      try {
+        if (typeof CFG === 'undefined' || !CFG.insecureCerts) return false;
+        const host = new URL(url).host;
+        return [CFG.server, CFG.stream].some(base => {
+          if (!base) return false;
+          try { return new URL(base).host === host; } catch (_) { return false; }
+        });
+      } catch (_) { return false; }
+    },
+
+    /* Tell the shell to persist the invalid-certificate opt-in. The shell
+     * only honours insecure fetches when ITS OWN stored copy of this setting
+     * is on, so a page (any page in this WebView) cannot flip it per-request:
+     * the operator's choice is the shell's state, set once, from here. */
+    setInsecure(on) {
+      if (!wv) return false;
+      try { wv.postMessage({ t: 'setInsecure', on: !!on }); return true; }
+      catch (_) { return false; }
     },
 
     /* fetch() the renderer can rely on for any RomM URL. https resolves to the
@@ -178,6 +215,10 @@ var nativeFetch = window.__cartNativeFetch || (() => {
       body: typeof o.body === 'string' ? o.body : '',
       contentType: headers['Content-Type'] || headers['content-type'] || 'application/json',
     };
+    // Certificate bypass is requested per-message but GRANTED by the shell
+    // only against its own stored setting: the page proposes, the shell
+    // decides, so a compromised or foreign page cannot lower TLS on its own.
+    if (HOST.insecureWanted && HOST.insecureWanted(url)) msg.insecure = true;
 
     /* Non-string request bodies.
      *

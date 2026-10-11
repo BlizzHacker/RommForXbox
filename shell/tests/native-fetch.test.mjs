@@ -419,6 +419,67 @@ await check('the shim records what it replaced, so it is identifiable at runtime
   assert.equal(ctx.window.XMLHttpRequest.DONE, 4, 'readyState constants are present');
 });
 
+/* --- issue #6: opt-in acceptance of an invalid certificate -----------------
+ *
+ * The renderer can never be told to trust a self-signed cert; native code can.
+ * The bridge routes an https request to the operator's OWN server through the
+ * native lane with insecure:true only when CFG.insecureCerts is on — and only
+ * for a host matching the configured server/stream, never for any https URL.
+ * The shell grants the bypass against its own stored setting; these tests pin
+ * the page half (the decision + the flag on the wire). */
+
+await check('an https server is NOT routed natively while the opt-in is off', async () => {
+  // No CFG at all in this context: insecureWanted must be false, so needsNative
+  // leaves https alone (mixed-content rule does not apply to https).
+  assert.equal(ctx.window.HOST.needsNative('https://romm.example.com/api/heartbeat'),
+    false, 'https stays direct by default');
+});
+
+await check('with the opt-in ON, the operator\'s own https host routes native+insecure', async () => {
+  // Define a CFG the bridge can read (typeof-guarded in insecureWanted).
+  ctx.CFG = {
+    insecureCerts: true,
+    server: 'https://192.168.1.200',
+    stream: '',
+  };
+  const HOST = ctx.window.HOST;
+  assert.equal(HOST.insecureWanted('https://192.168.1.200/api/heartbeat'), true,
+    'own server host is flagged');
+  assert.equal(HOST.needsNative('https://192.168.1.200/api/heartbeat'), true,
+    'own server https routes through native');
+  assert.equal(HOST.insecureWanted('https://evil.example.com/x'), false,
+    'a foreign https host is never bypassed');
+  assert.equal(HOST.needsNative('https://evil.example.com/x'), false,
+    'a foreign https host is never routed native');
+  // The flag actually reaches the wire so the shell can decide.
+  shell.routes.set('https://192.168.1.200/api/heartbeat', {
+    status: 200, headers: { 'content-type': 'application/json' }, body: JSON_BODY,
+  });
+  const before = shell.received.length;
+  const r = await nativeFetch('https://192.168.1.200/api/heartbeat', {});
+  assert.equal(r.ok, true, 'the insecure lane round-trips');
+  assert.equal(shell.received[before].insecure, true, 'nfetch carries insecure:true');
+});
+
+await check('setInsecure relays the toggle to the shell', async () => {
+  // setInsecure posts over the same channel; the stub records every posted
+  // message in `sent` (only nfetch lands in `received`).
+  const before = shell.sent.length;
+  ctx.window.HOST.setInsecure(true);
+  const sent = shell.sent[shell.sent.length - 1];
+  assert.equal(sent.t, 'setInsecure', 'a setInsecure message is posted');
+  assert.equal(sent.on, true, 'it carries the chosen state');
+  assert.ok(shell.sent.length > before, 'the host received it');
+});
+
+await check('turning the opt-in OFF returns https to the direct path', async () => {
+  ctx.CFG = { insecureCerts: false, server: 'https://192.168.1.200', stream: '' };
+  assert.equal(ctx.window.HOST.insecureWanted('https://192.168.1.200/api/heartbeat'),
+    false, 'opt-in off => no bypass');
+  assert.equal(ctx.window.HOST.needsNative('https://192.168.1.200/api/heartbeat'),
+    false, 'https stays direct again');
+});
+
 if (failed) {
   console.error(`native-fetch: ${failed} assertion group(s) failed`);
   process.exit(1);

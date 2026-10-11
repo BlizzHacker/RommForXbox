@@ -135,6 +135,18 @@ namespace RommForXbox.Shell
 
             var core = Web.CoreWebView2;
 
+            // The operator's invalid-certificate opt-in, persisted by the
+            // SHELL (not the page): NativeFetch only grants a per-message
+            // bypass while this shell-side setting is on, so no page inside
+            // this WebView can lower TLS on its own.
+            try
+            {
+                NativeFetch.AllowInsecure = "1".Equals(
+                    ApplicationData.Current.LocalSettings.Values["insecure_certs"]
+                        as string);
+            }
+            catch (Exception) { }
+
             // Serve the packaged web app from a real https origin. A file:// or
             // ms-appx-web:// origin is not a secure context in the ways
             // EmulatorJS needs, and localStorage would not persist the same way.
@@ -321,6 +333,20 @@ namespace RommForXbox.Shell
                     // Flow control: the page has taken delivery of a chunk, so
                     // one more may go out.
                     NativeFetch.Ack(obj);
+                    break;
+
+                case "setInsecure":
+                    // The settings screen relays the operator's choice. Stored
+                    // shell-side so the grant outlives the page and no other
+                    // page can set it per-request.
+                    try
+                    {
+                        var on = obj.GetNamedBoolean("on", false);
+                        NativeFetch.AllowInsecure = on;
+                        ApplicationData.Current.LocalSettings.Values["insecure_certs"] =
+                            on ? "1" : "";
+                    }
+                    catch (Exception) { }
                     break;
             }
         }

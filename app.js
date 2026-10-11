@@ -255,6 +255,23 @@ function setupItems() {
       : 'browse and play here, no second sign-in',
     go: () => { CFG.useRommWebUi = !CFG.useRommWebUi; renderSetup(''); },
   });
+  items.push({
+    label: 'Accept invalid HTTPS certificates: ' + (CFG.insecureCerts ? 'ON' : 'off'),
+    sub: CFG.insecureCerts
+      ? 'ON — trusts a self-signed cert from your server only; anyone on the network could impersonate it'
+      : 'for a server using a self-signed certificate (off by default)',
+    go: () => {
+      CFG.insecureCerts = !CFG.insecureCerts;
+      // The shell keeps its own copy and is the one that grants or refuses
+      // the bypass at fetch time, so the flip must reach it. In a plain
+      // browser setInsecure is a no-op and there is no bypass to grant —
+      // the browser's own trust store is the only answer there.
+      if (HOST.present) HOST.setInsecure(CFG.insecureCerts);
+      renderSetup(CFG.insecureCerts
+        ? 'Invalid certificates accepted — retry connecting.'
+        : 'Certificate checking is back on.');
+    },
+  });
   if (CFG.server) items.push({ label: 'Continue', sub: 'sign in to ' + CFG.server,
     go: () => enterAuth() });
   return items;
@@ -343,9 +360,10 @@ function probeMessage(e, server) {
       return 'That hostname could not be found (DNS). Check the spelling, or ' +
              'try the server\'s IP address instead.';
     case 'tls':
-      return 'The server\'s HTTPS certificate could not be trusted. If it uses a ' +
-             'self-signed certificate, reach it by http on the LAN, or install a ' +
-             'real certificate.';
+      return 'The server\'s HTTPS certificate could not be trusted. In Settings ' +
+             '(Y) you can turn on "Accept invalid HTTPS certificates" for your ' +
+             'own server, reach it by http on the LAN, or install a real ' +
+             'certificate.';
     case 'refused':
       return 'The server refused the connection. Check the port, and that RomM ' +
              'is running and listening on that address.';
@@ -1254,6 +1272,11 @@ async function migrateConfig() {
 }
 
 (async () => {
+  // Re-arm the shell's certificate bypass from the persisted page setting.
+  // The shell reads its own stored copy at startup too, but a setting
+  // toggled in a browser build then opened in the shell (or a cleared
+  // LocalSettings) must not silently disagree with what the UI shows.
+  if (HOST.present && HOST.setInsecure) HOST.setInsecure(CFG.insecureCerts);
   const migrated = await migrateConfig();
   if (CFG.server && CFG.token) {
     if (migrated) lastFailure = '';
