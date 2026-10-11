@@ -969,6 +969,10 @@ function flashLocalNotice(text, ms) {
   setTimeout(() => overlay.classList.add('hidden'), ms || 6000);
 }
 
+// True once EmulatorJS has actually started a game. Until then B means "back"
+// (the loading and error messages say so); after, B belongs to the game.
+let localPlaying = false;
+
 function armLocalQuitWatcher() {
   let heldSince = 0;
   const iv = setInterval(() => {
@@ -1023,6 +1027,7 @@ async function startLocal(p, g) {
   overlay.classList.remove('hidden');
   $('local-msg').textContent = 'Loading ' + (g.name || g.fs_name) + '…';
   armLocalQuitWatcher();
+  localPlaying = false;
 
   let romUrl, stateUrl = null;
   try {
@@ -1062,6 +1067,18 @@ async function startLocal(p, g) {
   window.EJS_gameUrl = romUrl;
   window.EJS_pathtodata = ROMM.emulatorJsData();
   window.EJS_startOnLoaded = true;
+  // From here on the controller is the game's. B used to reload the app at any
+  // time during local play, so a game's own B button (jump, cancel, back) threw
+  // the player out to the library with no way to remap it (issue #5). Quitting
+  // is Menu + View held, which no game uses; say so once.
+  window.EJS_onGameStart = () => {
+    localPlaying = true;
+    const hint = $('quit-hint');
+    if (hint) {
+      hint.classList.remove('hidden');
+      setTimeout(() => { if (view === 'local') hint.classList.add('hidden'); }, 8000);
+    }
+  };
   window.EJS_Buttons = { quickSave: true, quickLoad: true };
   if (stateUrl) window.EJS_loadStateURL = stateUrl;
   window.EJS_onSaveState = async e => {
@@ -1171,7 +1188,7 @@ GP.onUI(btn => {
   if (view === 'setup') return setupInput(btn);
   if (view === 'auth') return authInput(btn);
   if (view === 'library') return libraryInput(btn);
-  if (view === 'local' && btn === 'b') { releaseBlobs(); location.reload(); }
+  if (view === 'local' && btn === 'b' && !localPlaying) { releaseBlobs(); location.reload(); }
 });
 
 GP.onRaw((btn, pressed) => {
