@@ -83,7 +83,7 @@ writeFileSync(resolve(stage, 'AppxManifest.xml'), `<?xml version="1.0" encoding=
   <Identity Name="${IDENTITY.name}" Publisher="${IDENTITY.publisher}"
     Version="${VERSION}" ProcessorArchitecture="neutral" />
   <Properties>
-    <DisplayName>RomM for Xbox</DisplayName>
+    <DisplayName>Cartridge for Xbox</DisplayName>
     <PublisherDisplayName>${IDENTITY.publisherDisplayName}</PublisherDisplayName>
     <Description>Play your own self-hosted RomM retro game library on Xbox with the controller.</Description>
     <Logo>Assets\\StoreLogo.png</Logo>
@@ -96,7 +96,7 @@ writeFileSync(resolve(stage, 'AppxManifest.xml'), `<?xml version="1.0" encoding=
   <Capabilities><Capability Name="internetClient" /></Capabilities>
   <Applications>
     <Application Id="App" StartPage="${START_PAGE}">
-      <uap:VisualElements DisplayName="RomM for Xbox"
+      <uap:VisualElements DisplayName="Cartridge for Xbox"
         Description="Play your own self-hosted RomM retro game library on Xbox with the controller."
         Square150x150Logo="Assets\\Square150x150Logo.png"
         Square44x44Logo="Assets\\Square44x44Logo.png"

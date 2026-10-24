@@ -1,4 +1,4 @@
-# Build the Cartridge (RomM for Xbox) UWP app into a sideloadable MSIX.
+# Build the Cartridge for Xbox UWP app into a sideloadable MSIX.
 # Run from an x64 Native Tools / normal PowerShell AFTER the Visual Studio
 # "Universal Windows Platform build tools" workload is installed.
 #
@@ -27,6 +27,7 @@ if (-not (Test-Path $appxTargets)) {
 
 # Restore NuGet (WebView2, Microsoft.UI.Xaml, NETCore.UWP), then build + package.
 & $msbuild $proj /t:restore /p:Configuration=Release /p:Platform=x64 /v:m
+if ($LASTEXITCODE -ne 0) { throw "NuGet restore failed." }
 & $msbuild $proj `
     /t:Build `
     /p:Configuration=Release `
@@ -37,6 +38,7 @@ if (-not (Test-Path $appxTargets)) {
     /p:PackageCertificateKeyFile=RommForXbox.Shell_TemporaryKey.pfx `
     /p:PackageCertificatePassword=cartridge `
     /v:m
+if ($LASTEXITCODE -ne 0) { throw "MSIX build failed." }
 
 Write-Host "`n=== Output packages ===" -ForegroundColor Cyan
 Get-ChildItem -Recurse -Path (Join-Path $root 'shell\RommForXbox.Shell') `

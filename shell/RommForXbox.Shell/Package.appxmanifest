@@ -9,15 +9,15 @@
 
   <Identity Name="MOVEWEIGHT.RomMforXbox"
             Publisher="CN=6375D74B-5E4F-45B4-B246-B29507C1332A"
-            Version="0.30.0.0" />
+            Version="0.31.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="4f1c9e6a-3b7d-4e2a-9c51-8d0a6f2b7c31"
                     PhonePublisherId="00000000-0000-0000-0000-000000000000" />
 
   <Properties>
-    <DisplayName>Cartridge — RomM for Xbox</DisplayName>
+    <DisplayName>Cartridge for Xbox</DisplayName>
     <PublisherDisplayName>MOVE WEIGHT</PublisherDisplayName>
-    <Description>Cartridge plays your self-hosted RomM library on Xbox with a controller — every platform, one app. Unofficial; not affiliated with or endorsed by the RomM project.</Description>
+    <Description>Cartridge for Xbox connects to your self-hosted RomM library with controller navigation. Unofficial; not affiliated with or endorsed by the RomM project.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -35,8 +35,8 @@
                  Executable="$targetnametoken$.exe"
                  EntryPoint="RommForXbox.Shell.App">
       <uap:VisualElements
-        DisplayName="Cartridge — RomM for Xbox"
-        Description="Cartridge plays your self-hosted RomM library on Xbox with a controller. Unofficial; not affiliated with the RomM project."
+        DisplayName="Cartridge for Xbox"
+        Description="Cartridge for Xbox connects to your self-hosted RomM library with controller navigation. Unofficial; not affiliated with the RomM project."
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
         BackgroundColor="#0B1020">

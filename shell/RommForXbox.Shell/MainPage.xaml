@@ -13,6 +13,6 @@
                    TextWrapping="Wrap"
                    VerticalAlignment="Center"
                    HorizontalAlignment="Center"
-                   Text="Starting RomM for Xbox…" />
+                   Text="Starting Cartridge for Xbox…" />
     </Grid>
 </Page>

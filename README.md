@@ -1,92 +1,102 @@
-# RomM for Xbox
+# Cartridge for Xbox
 
-<table><tr><td>
+Browse your self-hosted RomM library with an Xbox controller, then play through a compatible browser core or your configured streaming server.
 
-**Part of [Cartridge](https://github.com/BlizzHacker/rom-hub/blob/master/BRAND.md) by MoveWeight** — a self-hosted retro-gaming ecosystem. Run the whole stack, not just this piece:
+[![Build Cartridge for Xbox](https://github.com/BlizzHacker/RommForXbox/actions/workflows/shell-msix.yml/badge.svg)](https://github.com/BlizzHacker/RommForXbox/actions/workflows/shell-msix.yml)
 
-```
-MoveWeight
-└── Cartridge                                  play + acquire your library
-    ├── ROMarr  ─────────────  request a game, it finds / grabs / files it
-    │   └── ROM Hub + plugins   backend-agnostic sources (RomM/Gaseous/Retrom)
-    └── Apps                    Desktop · Xbox · Roku · Stream server
-```
+**[Connect](#connect-your-library)** · **[Browser deployment](#browser-deployment)** · **[Native Xbox build](#native-xbox-app)** · **[Known limits](#what-is-and-is-not-verified)** · **[Report a problem](https://github.com/BlizzHacker/RommForXbox/issues)**
 
-**Acquire:** [ROMarr](https://github.com/BlizzHacker/romarr) · [ROM Hub](https://github.com/BlizzHacker/rom-hub) — **Play:** [Desktop](https://github.com/BlizzHacker/RommForDesktop) · [Xbox](https://github.com/BlizzHacker/RommForXbox) · [Roku](https://github.com/BlizzHacker/RommForRoku) · [Stream](https://github.com/BlizzHacker/RommStreamServer)
+## What you need
 
-<sub>Unofficial; not affiliated with or endorsed by RomM, Gaseous or Retrom.</sub>
+- A RomM server with your own library and actual ROM files.
+- An Xbox controller and a compatible Xbox/browser environment.
+- A supported player/core for the selected file. A streaming server is optional and adds remote play for its configured systems.
 
-</td></tr></table>
+Cartridge is a client. RomM supplies library data, covers, files and save-state services. [ROMarr](https://github.com/BlizzHacker/romarr) can help acquire and organize files separately; it is not required to browse an existing RomM library.
 
+## Two ways to run
 
+| Path | What it runs | Setup |
+|---|---|---|
+| **Xbox Edge** | Static web client in the Xbox's Chromium browser | Host the files with the same origin as RomM, or configure the required proxy/headers. |
+| **Native Xbox app** | UWP shell with WebView2, native gamepad input and a network bridge | Use an approved Store build, or build/test the MSIX through a supported developer installation. |
 
-Play your entire [RomM](https://github.com/rommapp/romm) library on **any retail
-Xbox** — no dev mode, no sideloading. Open one URL in the Xbox **Edge** browser
-and drive everything with the controller.
+The native shell is the current package project under `shell/`. The older `scripts/build-msix.mjs` generates a legacy hosted-web-app package; it is not the native WebView2 build and should not be substituted for it.
 
-## How it plays games
+## Connect your library
 
-| Tier | Systems | How |
-|------|---------|-----|
-| **On the Xbox** | NES, SNES, N64, GB/GBC/GBA, NDS, Genesis/MD, SMS/GG, 32X, Sega CD, PSX, PSP, Arcade, Atari, Lynx, Jaguar, 3DO, PCE, WonderSwan, … | EmulatorJS (WASM) runs directly in Edge with native Gamepad API — zero streaming latency |
-| **Streamed** | GameCube, Wii, Dreamcast, PS2, Saturn, 3DS | Server-side RetroArch captured over **WebRTC** (~100 ms), controller input over the data channel |
+1. Start Cartridge and enter your RomM server address, including the port if needed.
+2. Let the connection check finish. Its status and failure reason are shown on screen.
+3. Pair using **RomM → Settings → Client API Tokens → Add → Pair**, if your server provides that flow, or use your RomM username/password.
+4. Choose a platform and a game. Start with a small file and verify playback and saving before relying on a long session.
 
-The server picks the tier per platform (`GET /api/play/route`). Windows/installer
-platforms are never shown.
+An installed native shell can route plain-HTTP LAN requests through its native bridge. The browser client still follows browser origin and certificate rules: a page served over HTTPS cannot simply fetch every HTTP server. [Network setup and why browsing can work while playback fails](docs/multi-tenancy.md).
 
-Save states persist on the server across both tiers and across devices.
+Self-signed certificate support is an explicit opt-in for your selected server in the native app. Keep normal certificate validation enabled for other hosts. Connection and transport logic is tested in CI; successful playback with your server and console still needs a real test.
 
-## Connecting to your server
+### Controller basics
 
-On first run the app asks for your RomM address, checks it really is a RomM, and
-remembers it. Everything then comes from your server — library, covers, ROM
-bytes, EmulatorJS and save states.
+- D-pad: move; **A**: choose/play; **B**: back through menus.
+- **LB/RB**: switch platform.
+- During a game, **B belongs to the game**. Hold **Menu + View** to leave playback.
+- **X** on the setup page: diagnostics, including build and connection information.
 
-Sign in either way:
+## How playback works
 
-* **Pair** (preferred) — in RomM: **Settings → Client API Tokens → Add →
-  Pair**, then type the eight-digit code on the console. The app only ever holds
-  a scoped token, revocable in RomM at any time; it never sees your password.
-* **Username and password** — for a controller-only console that cannot easily
-  reach RomM's web UI to mint a code.
+A supported EmulatorJS system runs locally in the browser/WebView2. A configured streaming server can provide remote playback for other systems. Available routes depend on the platform, file format, core, firmware and server configuration; library visibility is not a guarantee that every game can launch.
 
-**In the installed Xbox app, a plain `http://192.168.x.x` address on your LAN is
-supported and needs no proxy, no certificate and no CORS headers.** The app
-fetches from a plain-http server through native code, which no browser rule
-applies to.
+Save-state upload is implemented through RomM. Validate a save and reload on your own setup before depending on it. Controller timing, memory limits and streaming latency are hardware/network dependent.
 
-**In the Xbox *browser*, serve the app from the same origin as your RomM.** RomM
-sends CORS headers on its JSON API but not on ROM downloads or `/assets` (nginx
-serves those), so a remote RomM will browse but not play there. See
-[docs/multi-tenancy.md](docs/multi-tenancy.md) for why and for the two-header
-workaround.
+## Browser deployment
 
-## Deploy
+The web client is static HTML/CSS/JavaScript; it needs no Node build step. Serve it from the same origin as your RomM or use a reverse proxy. A typical layout is:
 
-Static files — no build step. Serve them same-origin with two reverse proxies
-(see [RommStreamServer](https://github.com/BlizzHacker/RommStreamServer) for the
-backend and full nginx config):
-
-```
-/        → these files
-/romm/   → RomM (strip prefix)          # avoids CORS
-/api/    → stream server :8090 (+ WS upgrade on /api/rtc/signal)
-/emu/    → EmulatorJS data
+```text
+/        -> Cartridge web files
+/romm/   -> RomM, with the prefix stripped
+/api/    -> optional streaming server, including WebSocket signalling
+/emu/    -> your EmulatorJS data, if using this layout
 ```
 
-Controller reference: LB/RB switch platform · A play · B back ·
-in-stream hold **Menu + View** 1 s to quit.
+Adapt this to your RomM deployment rather than assuming those paths already exist. See [network deployment](docs/multi-tenancy.md) and the separate [Cartridge streaming server](https://github.com/BlizzHacker/RommStreamServer).
 
-## Installable Xbox app (MSIX)
+## Native Xbox app
 
-`python scripts/make-assets.py` regenerates the tile art;
-`node scripts/build-msix.mjs` builds `dist/RommForXbox_<ver>_neutral.msix`, a
-hosted web app targeting `Windows.Xbox` whose start page is
-`https://xbox.moveweight.com/`. Sideload it on a Dev Mode console (Device
-Portal > Add), or submit it to the Microsoft Store for retail installs.
-Set `ROMM_XBOX_SIGN_PFX`/`ROMM_XBOX_SIGN_PWD` to sign the output.
+The Store product remains **[9MXC51W17LH4](https://apps.microsoft.com/detail/9mxc51w17lh4)**. The public name is **Cartridge for Xbox**. The package identity `MOVEWEIGHT.RomMforXbox` and registered publisher are retained so this remains an update to the same product.
 
-**Read [docs/xbox-store-status.md](docs/xbox-store-status.md) before relying on
-the packaged app.** The browser path above is verified; a hosted web app runs on
-the deprecated EdgeHTML engine on console, so whether EmulatorJS can run *inside
-the packaged app* is untested — there is no console here to test it on.
+Store approval/publication is separate from a successful GitHub build. An unsigned CI artifact is not a retail-console installer. Dev Mode testing requires the appropriate package trust/signing and device setup.
+
+### Build and test
+
+The [Windows CI workflow](.github/workflows/shell-msix.yml) runs on relevant pull requests and main-branch changes. It:
+
+1. Validates the package identity and visible product name.
+2. Tests EmulatorJS core keys, native URL/error logic, controller/connection logic and the real JavaScript transport bridge.
+3. Restores and builds the actual x64 UWP/WebView2 project with .NET Native.
+4. Unpacks the output and checks its identity, Xbox target family and required web content.
+5. Uploads the package as a workflow artifact.
+
+Run the portable checks locally with Node.js and Python 3:
+
+```bash
+python3 tests/validate_manifest.py
+node tests/validate_cores.js
+node shell/tests/bridge-logic.test.mjs
+node shell/tests/native-fetch.test.mjs
+```
+
+Building the native app itself requires Windows, Visual Studio/MSBuild with UWP tools, the Windows SDK and NuGet restore. The canonical project is `shell/RommForXbox.Shell/RommForXbox.Shell.csproj`; CI records the complete build command and toolchain. Do not infer that a Linux syntax check built the MSIX.
+
+## What is and is not verified
+
+CI checks real source logic and the actual Windows package build. It cannot validate Xbox hardware input, WebView2 behavior on a particular console, each emulator core, all RomM versions, or save-state persistence across every device. This rebrand does not add a new hardware proof claim.
+
+The [package history and hardware test checklist](docs/xbox-store-status.md) explain the older hosted package and the current native shell. For a bug report, include the build/version, Xbox model, RomM version, server address scheme (HTTP/HTTPS), failing action and diagnostics message. Remove tokens and passwords.
+
+## Other Cartridge projects
+
+- [Cartridge for Windows](https://github.com/BlizzHacker/RommForDesktop): optional desktop companion.
+- [ROMarr](https://github.com/BlizzHacker/romarr): acquisition and library automation.
+- [ROM Hub](https://github.com/BlizzHacker/rom-hub): source and metadata plugins.
+
+Cartridge for Xbox is independent and unofficial, and is not endorsed by the RomM or Microsoft projects.
