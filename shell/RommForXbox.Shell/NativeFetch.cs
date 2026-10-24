@@ -342,7 +342,7 @@ namespace RommForXbox.Shell
                     else if (bodyText.Length > 0)
                     {
                         req.Content = new Windows.Web.Http.HttpStringContent(
-                            bodyText, System.Text.UnicodeEncoding.UTF8, contentType);
+                            bodyText, Windows.Storage.Streams.UnicodeEncoding.Utf8, contentType);
                     }
 
                     Windows.Web.Http.HttpResponseMessage resp;
@@ -374,7 +374,7 @@ namespace RommForXbox.Shell
 
                         var total = 0L;
                         var buffer = new byte[ChunkBytes];
-                        using (var stream = resp.Content.ReadAsInputStreamAsync()
+                        using (var stream = (await resp.Content.ReadAsInputStreamAsync())
                                              .AsStreamForRead())
                         using (var readCts = new CancellationTokenSource())
                         {

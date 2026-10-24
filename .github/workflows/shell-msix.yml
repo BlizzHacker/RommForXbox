@@ -1,23 +1,41 @@
-name: Build Xbox shell MSIX
+name: Build Cartridge for Xbox
 
 # The UWP workload is several GB and is not installed on the dev machine, so the
 # packaged app is built here instead. Diagnostics run before the build so a
 # missing component is identifiable from one failed run rather than three.
 
 on:
+  pull_request:
+    paths:
+      - 'shell/**'
+      - 'tests/**'
+      - '.github/workflows/shell-msix.yml'
+      - '*.js'
+      - 'index.html'
+      - 'style.css'
+      - 'build-msix.ps1'
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - 'shell/**'
+      - 'tests/**'
       - '.github/workflows/shell-msix.yml'
       - '*.js'
       - 'index.html'
       - 'style.css'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: xbox-shell-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-2022
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +57,10 @@ jobs:
           if (Test-Path $sdk) { Get-ChildItem $sdk | Select-Object Name } else { Write-Host "no UAP platforms" }
           Write-Host "--- MSBuild ---"
           msbuild -version
+
+      - name: Validate brand and Store identity
+        shell: pwsh
+        run: python tests/validate_manifest.py
 
       - name: Validate EmulatorJS core names
         shell: pwsh
@@ -120,6 +142,7 @@ jobs:
             /p:AppxPackageSigningEnabled=false `
             /p:GenerateAppInstallerFile=false `
             /v:minimal /consoleloggerparameters:Summary 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX build failed; see build.log' }
 
       - name: Fail if .NET Native has no runtime directives
         shell: pwsh
@@ -178,6 +201,9 @@ jobs:
           $id = $m.Package.Identity
           Write-Host ("identity: {0} {1} {2}" -f $id.Name, $id.Version, $id.ProcessorArchitecture)
           Write-Host ("publisher: {0}" -f $id.Publisher)
+          if ($m.Package.Properties.DisplayName -ne 'Cartridge for Xbox') {
+            Write-Error 'public product name is wrong in the built package'; exit 1
+          }
           if ($id.Name -ne 'MOVEWEIGHT.RomMforXbox') {
             Write-Error "identity name drifted from the Partner Center product"; exit 1
           }
@@ -195,7 +221,7 @@ jobs:
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: RommForXbox-shell-msix
+          name: Cartridge-Xbox-x64-msix
           path: |
             shell/**/*.msix
             shell/**/*.msixupload

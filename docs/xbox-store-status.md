@@ -1,4 +1,16 @@
-# Xbox + Microsoft Store: what works, and the one open risk
+# Cartridge for Xbox: package status and history
+
+## Current source architecture (2026-10-24)
+
+The current package is the native UWP/WebView2 project under `shell/`, not the old hosted-web-app generator. It supplies native gamepad input and a native network bridge. Public branding is **Cartridge for Xbox**; the registered package identity, publisher and Store product `9MXC51W17LH4` stay unchanged.
+
+The CI workflow builds the actual x64 native package and tests its URL/error and JavaScript transport logic on relevant pull requests. A passing package build does not prove playback on an Xbox. No new hardware validation is claimed for this update; consult the run linked from the PR for the exact build result.
+
+Before a Store release, test on the target console: first launch, controller-only setup/back/quit, HTTP and HTTPS server connections, a small local game, a larger archive/core download, self-signed opt-in only for the selected host, save then reload, suspend/resume and streaming where configured. Record console model, OS, RomM version and the exact package build.
+
+## Historical notes
+
+The notes below describe the 2026-07-29 hosted-package investigation and subsequent native-shell work. They are retained to explain why the legacy `scripts/build-msix.mjs` path is not the current native build. Statements of browser proof below refer to that historical test, not fresh verification of every current console or source.
 
 Status as of 2026-07-29.
 

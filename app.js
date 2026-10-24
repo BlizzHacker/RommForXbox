@@ -1,4 +1,4 @@
-/* RomM for Xbox — gamepad-first client for *any* RomM server.
+/* Cartridge for Xbox — controller-first client for your RomM server.
  *
  * There is no backend of ours in the play path: the user points the app at
  * their own RomM and that server supplies the library, the ROM bytes,
