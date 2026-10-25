@@ -1,0 +1,34 @@
+name: Local Xbox source proof
+on:
+  push:
+    branches: [main, codex/gitea-local-ci]
+  workflow_dispatch:
+
+jobs:
+  logic:
+    runs-on: cartridge-linux
+    timeout-minutes: 10
+    env:
+      PROOF: /opt/repos/ai-state/wadei/gitea-ci/artifacts/xbox-${{ github.run_id }}
+    steps:
+      - uses: https://github.com/actions/checkout@v4
+      - name: Validate brand, identity, cores and real transport code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROOF"
+          {
+            python3 tests/validate_manifest.py
+            node tests/validate_cores.js
+            node shell/tests/bridge-logic.test.mjs
+            node shell/tests/native-fetch.test.mjs
+          } 2>&1 | tee "$PROOF/logic.log"
+          git rev-parse HEAD > "$PROOF/revision.txt"
+          printf 'Linux source/transport proof only. UWP package compilation needs a Windows UWP toolchain; console playback needs hardware testing.\n' > "$PROOF/scope.txt"
+      - name: Keep the small proof in Gitea
+        if: always()
+        uses: https://github.com/actions/upload-artifact@v3
+        with:
+          name: cartridge-xbox-linux-proof
+          path: /opt/repos/ai-state/wadei/gitea-ci/artifacts/xbox-${{ github.run_id }}
+          retention-days: 7
